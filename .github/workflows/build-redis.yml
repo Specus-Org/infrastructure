@@ -6,6 +6,8 @@
 # =============================================================================
 
 name: Build Redis Image
+# NOTE: This workflow shares logic with build-postgres.yml and build-airflow.yml
+# Consider using a reusable workflow (workflow_call) for DRY
 
 on:
   push:
@@ -74,6 +76,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Test container
+        if: github.event_name == 'pull_request'
+        run: |
+          docker run -d --name test-redis ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          sleep 5
+          docker exec test-redis redis-cli ping | grep -q PONG
+          docker stop test-redis
 
       - name: Image digest
         if: github.event_name != 'pull_request'

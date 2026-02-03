@@ -11,17 +11,17 @@ x-airflow-common: &airflow-common
     dockerfile: Dockerfile
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://airflow:airflow_password@postgres:5432/airflow
-    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow_password}@postgres:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY:-}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    AIRFLOW__WEBSERVER__SECRET_KEY: 'local-dev-secret-key-change-in-production'
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY:-local-dev-secret-key-change-in-production}
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.session,airflow.api.auth.backend.basic_auth'
     # Default admin user for local development
     _AIRFLOW_WWW_USER_CREATE: 'true'
-    _AIRFLOW_WWW_USER_USERNAME: admin
-    _AIRFLOW_WWW_USER_PASSWORD: admin
+    _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
+    _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
   volumes:
     - ./dags:/opt/airflow/dags
     - airflow-logs:/opt/airflow/logs
@@ -29,8 +29,6 @@ x-airflow-common: &airflow-common
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     postgres:
-      condition: service_healthy
-    redis:
       condition: service_healthy
 
 services:
@@ -42,8 +40,8 @@ services:
       context: ../postgres
       dockerfile: Dockerfile
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_password
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
       POSTGRES_DB: postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -51,23 +49,6 @@ services:
       - "5432:5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # ---------------------------------------------------------------------------
-  # Redis - Optional for caching (Airflow can work without it)
-  # ---------------------------------------------------------------------------
-  redis:
-    build:
-      context: ../redis
-      dockerfile: Dockerfile
-    command: redis-server /usr/local/etc/redis/redis.conf --requirepass redis_password
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -85,12 +66,12 @@ services:
         # Create airflow database in postgres if it doesn't exist
         airflow db check || airflow db migrate
         airflow users create \
-          --username admin \
+          --username ${AIRFLOW_ADMIN_USERNAME:-admin} \
           --firstname Admin \
           --lastname User \
           --role Admin \
-          --email admin@example.com \
-          --password admin || true
+          --email ${AIRFLOW_ADMIN_EMAIL:-admin@example.com} \
+          --password ${AIRFLOW_ADMIN_PASSWORD:-admin} || true
         echo "Initialization complete!"
     environment:
       <<: *airflow-common-env

@@ -6,6 +6,8 @@
 # =============================================================================
 
 name: Build PostgreSQL Image
+# NOTE: This workflow shares logic with build-redis.yml and build-airflow.yml
+# Consider using a reusable workflow (workflow_call) for DRY
 
 on:
   push:
@@ -74,6 +76,15 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Test container
+        if: github.event_name == 'pull_request'
+        run: |
+          docker run -d --name test-pg -e POSTGRES_PASSWORD=test ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          sleep 30
+          docker exec test-pg pg_isready -U postgres
+          docker exec test-pg psql -U postgres -c "SELECT extname FROM pg_extension WHERE extname IN ('pg_stat_statements', 'uuid-ossp', 'pg_trgm')"
+          docker stop test-pg
 
       - name: Image digest
         if: github.event_name != 'pull_request'

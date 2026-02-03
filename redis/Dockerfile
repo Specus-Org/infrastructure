@@ -15,7 +15,7 @@ COPY redis.conf /usr/local/etc/redis/redis.conf
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD redis-cli ping | grep -q PONG || exit 1
+    CMD redis-cli -a "${REDIS_PASSWORD:-}" ping 2>/dev/null | grep -q PONG || exit 1
 
 # Expose Redis port
 EXPOSE 6379

@@ -56,8 +56,10 @@ COPY --from=age-builder /age-install/usr/lib/postgresql/17/lib/ /usr/lib/postgre
 COPY --from=age-builder /age-install/usr/share/postgresql/17/extension/ /usr/share/postgresql/17/extension/
 
 # Install ParadeDB pg_search
+ARG TARGETARCH
 ARG PARADEDB_VERSION=0.15.6
-RUN curl -L "https://github.com/paradedb/paradedb/releases/download/v${PARADEDB_VERSION}/pg_search-v${PARADEDB_VERSION}-pg17-amd64-linux-gnu.deb" \
+RUN ARCH_SUFFIX=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "amd64") && \
+    curl -L "https://github.com/paradedb/paradedb/releases/download/v${PARADEDB_VERSION}/pg_search-v${PARADEDB_VERSION}-pg17-${ARCH_SUFFIX}-linux-gnu.deb" \
     -o /tmp/pg_search.deb && \
     dpkg -i /tmp/pg_search.deb && \
     rm /tmp/pg_search.deb

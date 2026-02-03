@@ -6,6 +6,8 @@
 # =============================================================================
 
 name: Build Airflow Image
+# NOTE: This workflow shares logic with build-postgres.yml and build-redis.yml
+# Consider using a reusable workflow (workflow_call) for DRY
 
 on:
   push:
@@ -74,6 +76,11 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Test container
+        if: github.event_name == 'pull_request'
+        run: |
+          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} airflow version
 
       - name: Image digest
         if: github.event_name != 'pull_request'

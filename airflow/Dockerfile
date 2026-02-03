@@ -16,7 +16,6 @@ USER root
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     libpq-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -26,14 +25,8 @@ USER airflow
 
 # Install Python dependencies
 # Add any additional Python packages your DAGs need here
-RUN pip install --no-cache-dir \
-    apache-airflow-providers-postgres \
-    apache-airflow-providers-redis \
-    apache-airflow-providers-http \
-    apache-airflow-providers-common-sql \
-    requests \
-    pandas \
-    psycopg2-binary
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Copy custom airflow configuration
 COPY --chown=airflow:root airflow.cfg /opt/airflow/airflow.cfg
