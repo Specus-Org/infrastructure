@@ -9,6 +9,8 @@ x-airflow-common: &airflow-common
   build:
     context: .
     dockerfile: Dockerfile
+  env_file:
+    - .env
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow_password}@postgres:5432/airflow
@@ -39,6 +41,8 @@ services:
     build:
       context: ../postgres
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
