@@ -126,6 +126,14 @@ net.ipv6.conf.all.forwarding = 1
 EOF
 
 modprobe nf_conntrack 2>/dev/null || true
+
+# Load ip6_tables module required by WireGuard (wg-quick uses ip6tables)
+if ! modprobe ip6_tables 2>/dev/null; then
+    log_warn "ip6_tables module not found, installing linux-modules-extra..."
+    apt install -y "linux-modules-extra-$(uname -r)"
+    modprobe ip6_tables
+fi
+
 sysctl --system
 log_info "Kernel parameters applied"
 

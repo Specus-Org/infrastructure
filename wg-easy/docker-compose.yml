@@ -10,8 +10,9 @@ services:
     restart: unless-stopped
     environment:
       - PORT=51821
-      # Bind admin UI to VPN interface only; never expose to public network
-      - HOST=10.8.0.1
+      # Bind to all interfaces; Vultr firewall restricts 51821 to VPN-only
+      # Cannot use 10.8.0.1 because the wg0 interface doesn't exist at startup
+      - HOST=0.0.0.0
       # INIT_* vars are used on first startup only; remove from .env after first login
       - INIT_ENABLED=${INIT_ENABLED:-false}
       - INIT_USERNAME=${INIT_USERNAME:-}
@@ -33,7 +34,7 @@ services:
 # Notes:
 # 1. Uses network_mode: host (binds directly to 51820/udp + 51821/tcp)
 # 2. WireGuard configs persisted at /etc/wireguard on host
-# 3. Admin UI listens on 10.8.0.1:51821 (VPN clients only)
+# 3. Admin UI listens on 0.0.0.0:51821 (Vultr firewall restricts to VPN-only)
 # 4. Ensure Vultr firewall allows UDP 51820 (public) and TCP 51821 (VPN-only)
 # 5. Client configs can be created and downloaded from the web UI
 # 6. INIT_* vars set credentials and VPN config on first startup only; remove from .env afterwards
