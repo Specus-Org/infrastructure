@@ -1,0 +1,36 @@
+# wg-easy: WireGuard VPN Server + Web Management UI
+# Deployed automatically by scripts/setup-vps.sh to /opt/specus/wg-easy
+# This file is kept in version control as a reference
+
+services:
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:15
+    container_name: wg-easy
+    network_mode: "host"
+    restart: unless-stopped
+    environment:
+      - PORT=51821
+      # Bind admin UI to VPN interface only; never expose to public network
+      - HOST=10.8.0.1
+      - PASSWORD_HASH=${WG_PASSWORD_HASH}
+      # Explicit VPN subnet configuration
+      - WG_DEFAULT_ADDRESS=10.8.0.x
+      - WG_DEFAULT_DNS=1.1.1.1
+      - WG_ALLOWED_IPS=10.8.0.0/24
+    volumes:
+      - /etc/wireguard:/etc/wireguard
+    cap_add:
+      - NET_ADMIN
+      # WireGuard kernel module must be pre-loaded at boot (modprobe wireguard).
+      # SYS_MODULE is intentionally omitted to reduce container privileges.
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+# Notes:
+# 1. Uses network_mode: host (binds directly to 51820/udp + 51821/tcp)
+# 2. WireGuard configs persisted at /etc/wireguard on host
+# 3. Admin UI listens on 10.8.0.1:51821 (VPN clients only)
+# 4. Ensure Vultr firewall allows UDP 51820 (public) and TCP 51821 (VPN-only)
+# 5. Client configs can be created and downloaded from the web UI
+# 6. WG_ALLOWED_IPS=10.8.0.0/24 routes only VPN traffic (split-tunnel)
+# 7. PASSWORD_HASH is a bcrypt hash -- see .env.example for generation command
