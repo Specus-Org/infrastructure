@@ -236,15 +236,18 @@ infrastructure/
 ├── .github/workflows/     # CI/CD pipelines
 ├── postgres/
 │   ├── Dockerfile         # Multi-stage build with extensions
+│   ├── .env.example       # PostgreSQL + role passwords
 │   ├── postgresql.conf    # Production configuration
 │   ├── pg_hba.conf        # Authentication rules
 │   └── init-scripts/      # Database initialization
 ├── redis/
 │   ├── Dockerfile              # Alpine-based image
+│   ├── .env.example            # Redis password
 │   ├── specus-redis-entrypoint.sh  # Password injection entrypoint
 │   └── redis.conf              # Cache configuration
 ├── airflow/
 │   ├── Dockerfile         # Custom Airflow image
+│   ├── .env.example       # Airflow secrets + references to PG/Redis
 │   ├── docker-compose.yml # Local development
 │   ├── airflow.cfg        # Airflow configuration
 │   └── dags/              # DAG files
