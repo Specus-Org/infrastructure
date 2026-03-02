@@ -14,7 +14,7 @@
 # -----------------------------------------------------------------------------
 FROM postgres:17-bookworm AS age-builder
 
-ARG AGE_VERSION=1.5.0
+ARG AGE_VERSION=1.7.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 
-RUN git clone --branch PG17/v${AGE_VERSION}-rc0 --depth 1 \
+RUN git clone --branch release/PG17/${AGE_VERSION} --depth 1 \
     https://github.com/apache/age.git && \
     cd age && \
     make && \
@@ -57,10 +57,8 @@ COPY --from=age-builder /age-install/usr/lib/postgresql/17/lib/ /usr/lib/postgre
 COPY --from=age-builder /age-install/usr/share/postgresql/17/extension/ /usr/share/postgresql/17/extension/
 
 # Install ParadeDB pg_search
-ARG TARGETARCH
-ARG PARADEDB_VERSION=0.15.6
-RUN ARCH_SUFFIX=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "amd64") && \
-    curl -L "https://github.com/paradedb/paradedb/releases/download/v${PARADEDB_VERSION}/pg_search-v${PARADEDB_VERSION}-pg17-${ARCH_SUFFIX}-linux-gnu.deb" \
+ARG PARADEDB_VERSION=0.21.10
+RUN curl -L "https://github.com/paradedb/paradedb/releases/download/v${PARADEDB_VERSION}/postgresql-17-pg-search_${PARADEDB_VERSION}-1PARADEDB-bookworm_amd64.deb" \
     -o /tmp/pg_search.deb && \
     dpkg -i /tmp/pg_search.deb && \
     rm /tmp/pg_search.deb
