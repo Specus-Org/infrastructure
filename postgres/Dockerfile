@@ -19,6 +19,7 @@ ARG AGE_VERSION=1.5.0
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
+    ca-certificates \
     postgresql-server-dev-17 \
     libreadline-dev \
     zlib1g-dev \
