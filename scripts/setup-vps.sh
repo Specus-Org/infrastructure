@@ -201,9 +201,17 @@ if [ -z "$WG_PASSWORD" ]; then
     exit 1
 fi
 
+log_info "Pulling wg-easy image (this may take a moment)..."
+docker pull ghcr.io/wg-easy/wg-easy:15
+
 log_info "Hashing password..."
-WG_PASSWORD_HASH=$(docker run --rm ghcr.io/wg-easy/wg-easy:15 wgpw "$WG_PASSWORD" 2>/dev/null)
+WG_PASSWORD_HASH=$(docker run --rm ghcr.io/wg-easy/wg-easy:15 wgpw "$WG_PASSWORD")
 unset WG_PASSWORD
+
+if [ -z "$WG_PASSWORD_HASH" ]; then
+    log_error "Failed to generate password hash"
+    exit 1
+fi
 
 mkdir -p "$WG_EASY_DIR"
 mkdir -p /etc/wireguard
