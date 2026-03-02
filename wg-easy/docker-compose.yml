@@ -12,11 +12,15 @@ services:
       - PORT=51821
       # Bind admin UI to VPN interface only; never expose to public network
       - HOST=10.8.0.1
-      - PASSWORD_HASH=${WG_PASSWORD_HASH}
-      # Explicit VPN subnet configuration
-      - WG_DEFAULT_ADDRESS=10.8.0.x
-      - WG_DEFAULT_DNS=1.1.1.1
-      - WG_ALLOWED_IPS=10.8.0.0/24
+      # INIT_* vars are used on first startup only; remove from .env after first login
+      - INIT_ENABLED=${INIT_ENABLED:-false}
+      - INIT_USERNAME=${INIT_USERNAME:-}
+      - INIT_PASSWORD=${INIT_PASSWORD:-}
+      - INIT_HOST=${INIT_HOST:-}
+      - INIT_PORT=${INIT_PORT:-51820}
+      - INIT_DNS=${INIT_DNS:-1.1.1.1}
+      - INIT_IPV4_CIDR=${INIT_IPV4_CIDR:-10.8.0.0/24}
+      - INIT_ALLOWED_IPS=${INIT_ALLOWED_IPS:-10.8.0.0/24}
     volumes:
       - /etc/wireguard:/etc/wireguard
     cap_add:
@@ -32,5 +36,5 @@ services:
 # 3. Admin UI listens on 10.8.0.1:51821 (VPN clients only)
 # 4. Ensure Vultr firewall allows UDP 51820 (public) and TCP 51821 (VPN-only)
 # 5. Client configs can be created and downloaded from the web UI
-# 6. WG_ALLOWED_IPS=10.8.0.0/24 routes only VPN traffic (split-tunnel)
-# 7. PASSWORD_HASH is a bcrypt hash -- see .env.example for generation command
+# 6. INIT_* vars set credentials and VPN config on first startup only; remove from .env afterwards
+# 7. Password can be reset via: docker compose exec wg-easy cli db:admin:reset --password NEW

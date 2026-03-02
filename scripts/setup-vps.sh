@@ -192,7 +192,20 @@ CURRENT_STEP="wg-easy VPN deployment"
 log_step "Deploying wg-easy VPN server..."
 
 echo ""
-log_info "wg-easy requires a password for the admin web UI"
+log_info "wg-easy requires credentials for the admin web UI"
+
+# Detect public IP for WireGuard endpoint
+SERVER_IP=$(curl -s https://api.ipify.org || curl -s https://ifconfig.me || true)
+read -p "Enter server public IP or domain [${SERVER_IP}]: " WG_HOST
+WG_HOST="${WG_HOST:-$SERVER_IP}"
+
+if [ -z "$WG_HOST" ]; then
+    log_error "Server public IP/domain is required for WireGuard clients"
+    exit 1
+fi
+
+read -p "Enter wg-easy admin username [admin]: " WG_USERNAME
+WG_USERNAME="${WG_USERNAME:-admin}"
 read -sp "Enter wg-easy admin password: " WG_PASSWORD
 echo ""
 
@@ -204,27 +217,23 @@ fi
 log_info "Pulling wg-easy image (this may take a moment)..."
 docker pull ghcr.io/wg-easy/wg-easy:15
 
-log_info "Hashing password..."
-WG_PASSWORD_HASH=$(docker run --rm ghcr.io/wg-easy/wg-easy:15 wgpw "$WG_PASSWORD")
-unset WG_PASSWORD
-
-if [ -z "$WG_PASSWORD_HASH" ]; then
-    log_error "Failed to generate password hash"
-    exit 1
-fi
-
 mkdir -p "$WG_EASY_DIR"
 mkdir -p /etc/wireguard
 
 cp "$SCRIPT_DIR/../wg-easy/docker-compose.yml" "$WG_EASY_DIR/docker-compose.yml"
 
 cat > "$WG_EASY_DIR/.env" << EOF
-PASSWORD_HASH=${WG_PASSWORD_HASH}
-WG_DEFAULT_ADDRESS=10.8.0.x
-WG_DEFAULT_DNS=1.1.1.1
-WG_ALLOWED_IPS=10.8.0.0/24
+INIT_ENABLED=true
+INIT_USERNAME=${WG_USERNAME}
+INIT_PASSWORD=${WG_PASSWORD}
+INIT_HOST=${WG_HOST}
+INIT_PORT=51820
+INIT_DNS=1.1.1.1
+INIT_IPV4_CIDR=10.8.0.0/24
+INIT_ALLOWED_IPS=10.8.0.0/24
 EOF
 chmod 600 "$WG_EASY_DIR/.env"
+unset WG_PASSWORD
 
 log_info "Starting wg-easy..."
 docker compose -f "$WG_EASY_DIR/docker-compose.yml" up -d
@@ -254,10 +263,11 @@ log_info "  Journald: 500MB max, 30-day retention"
 log_info "  wg-easy: running on ports 51820/udp + 51821/tcp"
 echo ""
 log_info "Next steps:"
-log_info "  1. Run ./harden-ssh.sh to secure SSH access"
-log_info "  2. Configure Vultr cloud firewall (see firewall/vultr/specus-vps.md)"
-log_info "  3. Access wg-easy UI at http://<server-ip>:51821"
-log_info "  4. Create VPN client configs via wg-easy UI"
+log_info "  1. Access wg-easy UI at http://<server-ip>:51821 and log in"
+log_info "  2. Remove INIT_* vars from $WG_EASY_DIR/.env (credentials stored in DB after first login)"
+log_info "  3. Run ./harden-ssh.sh to secure SSH access"
+log_info "  4. Configure Vultr cloud firewall (see firewall/vultr/specus-vps.md)"
+log_info "  5. Create VPN client configs via wg-easy UI"
 echo ""
 log_info "wg-easy compose location: $WG_EASY_DIR"
 log_info "WireGuard configs: /etc/wireguard"
