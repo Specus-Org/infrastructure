@@ -13,12 +13,16 @@ LABEL org.opencontainers.image.source="https://github.com/adryanev/specus-infras
 # Copy custom configuration
 COPY redis.conf /usr/local/etc/redis/redis.conf
 
+# Copy entrypoint script that wires REDIS_PASSWORD at runtime
+COPY specus-redis-entrypoint.sh /usr/local/bin/specus-redis-entrypoint.sh
+RUN chmod +x /usr/local/bin/specus-redis-entrypoint.sh
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD redis-cli -a "${REDIS_PASSWORD:-}" ping 2>/dev/null | grep -q PONG || exit 1
+    CMD sh -c 'REDISCLI_AUTH="${REDIS_PASSWORD:-}" redis-cli ping 2>/dev/null | grep -q PONG' || exit 1
 
 # Expose Redis port
 EXPOSE 6379
 
-# Run Redis with custom config
-CMD ["redis-server", "/usr/local/etc/redis/redis.conf"]
+# Entrypoint conditionally passes --requirepass if REDIS_PASSWORD is set
+ENTRYPOINT ["specus-redis-entrypoint.sh"]

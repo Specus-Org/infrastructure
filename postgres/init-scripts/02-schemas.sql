@@ -18,4 +18,42 @@ BEGIN
 END
 $$;
 
+-- =============================================================================
+-- Grant specus_app access to the specus database
+-- =============================================================================
+-- specus_app is the application role used by backend services.
+-- Grants are applied via \gexec to target the specus database context.
+-- =============================================================================
+
+-- Grant connect privilege on the specus database
+SELECT 'GRANT CONNECT ON DATABASE ' || datname || ' TO specus_app'
+FROM pg_database WHERE datname = 'specus'\gexec
+
+-- Switch to the specus database for schema-level grants
+\c specus
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'specus_app') THEN
+        -- Schema usage
+        GRANT USAGE ON SCHEMA public TO specus_app;
+
+        -- DML on all existing tables
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO specus_app;
+
+        -- Sequence access for serial/identity columns
+        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO specus_app;
+
+        -- Ensure future tables/sequences are also accessible
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public
+            GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO specus_app;
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public
+            GRANT USAGE, SELECT ON SEQUENCES TO specus_app;
+    END IF;
+END
+$$;
+
+-- Switch back to the default database
+\c postgres
+
 SELECT 'PostgreSQL initialization complete!' AS status;

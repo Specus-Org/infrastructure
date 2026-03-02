@@ -66,11 +66,13 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./postgres
           file: ./postgres/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          load: ${{ github.event_name == 'pull_request' }}
           push: ${{ github.event_name != 'pull_request' && (github.event.inputs.push_image != 'false') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -80,7 +82,7 @@ jobs:
       - name: Test container
         if: github.event_name == 'pull_request'
         run: |
-          docker run -d --name test-pg -e POSTGRES_PASSWORD=test ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker run -d --name test-pg -e POSTGRES_PASSWORD=test ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           sleep 30
           docker exec test-pg pg_isready -U postgres
           docker exec test-pg psql -U postgres -c "SELECT extname FROM pg_extension WHERE extname IN ('pg_stat_statements', 'uuid-ossp', 'pg_trgm')"

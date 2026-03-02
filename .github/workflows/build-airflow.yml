@@ -61,16 +61,18 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=2.10
-            type=raw,value=2.10-{{sha}}
+            type=raw,value=3.1
+            type=raw,value=3.1-{{sha}}
             type=raw,value=latest
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./airflow
           file: ./airflow/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          load: ${{ github.event_name == 'pull_request' }}
           push: ${{ github.event_name != 'pull_request' && (github.event.inputs.push_image != 'false') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -80,7 +82,7 @@ jobs:
       - name: Test container
         if: github.event_name == 'pull_request'
         run: |
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} airflow version
+          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest airflow version
 
       - name: Image digest
         if: github.event_name != 'pull_request'

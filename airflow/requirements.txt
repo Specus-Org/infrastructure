@@ -1,10 +1,10 @@
-# Airflow Providers
-apache-airflow-providers-postgres==5.12.0
-apache-airflow-providers-redis==3.8.0
-apache-airflow-providers-http==4.12.0
-apache-airflow-providers-common-sql==1.15.0
+# Airflow Providers (Airflow 3-compatible)
+apache-airflow-providers-postgres==6.5.4
+apache-airflow-providers-redis==4.4.2
+apache-airflow-providers-http==5.6.4
+apache-airflow-providers-common-sql==1.31.0
 
 # Additional Dependencies
-requests==2.31.0
-pandas==2.2.0
-psycopg2-binary==2.9.9
+requests==2.32.3
+pandas==2.2.3
+psycopg2-binary==2.9.10

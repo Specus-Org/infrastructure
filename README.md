@@ -8,7 +8,7 @@ Custom Docker images for the Specus platform, deployable to Dokploy as individua
 |---------|------------|---------|
 | PostgreSQL 17 | postgres:17-bookworm | Primary database with extensions |
 | Redis 7 | redis:7-alpine | Caching layer |
-| Airflow 2.10 | apache/airflow:2.10.4 | Workflow orchestration |
+| Airflow 3.1 | apache/airflow:3.1.7 | Workflow orchestration |
 
 ## Quick Start
 
@@ -62,10 +62,10 @@ SELECT extname, extversion FROM pg_extension ORDER BY extname;
 
 | Setting | Value | Purpose |
 |---------|-------|---------|
-| shared_buffers | 256MB | Data caching |
-| effective_cache_size | 768MB | Planner hint |
-| work_mem | 16MB | Per-operation memory |
-| max_connections | 100 | Connection limit |
+| shared_buffers | 1GB | Data caching |
+| effective_cache_size | 2GB | Planner hint |
+| work_mem | 4MB | Per-operation memory |
+| max_connections | 50 | Connection limit |
 | log_min_duration_statement | 1000ms | Slow query logging |
 
 ### Redis (Cache mode)
@@ -85,8 +85,9 @@ Create each service in Dokploy as a Docker image deployment:
 
 - **specus-postgres**: `ghcr.io/<username>/specus-postgres:17`
 - **specus-redis**: `ghcr.io/<username>/specus-redis:7`
-- **specus-airflow-webserver**: `ghcr.io/<username>/specus-airflow:latest`
+- **specus-airflow-api-server**: `ghcr.io/<username>/specus-airflow:latest`
 - **specus-airflow-scheduler**: `ghcr.io/<username>/specus-airflow:latest`
+- **specus-airflow-triggerer**: `ghcr.io/<username>/specus-airflow:latest`
 
 ### 2. Network Configuration
 
@@ -105,28 +106,31 @@ POSTGRES_DB=specus
 #### Redis
 
 ```
-# Pass password via command override
-Command: redis-server /usr/local/etc/redis/redis.conf --requirepass <secure-password>
+REDIS_PASSWORD=<secure-password>
 ```
 
-#### Airflow Webserver
+#### Airflow API Server
 
 ```
 AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql://airflow:<password>@specus-postgres:5432/airflow
 AIRFLOW__CORE__EXECUTOR=LocalExecutor
 AIRFLOW__CORE__FERNET_KEY=<generate-with-python>
-AIRFLOW__WEBSERVER__SECRET_KEY=<random-hex-string>
+AIRFLOW__API__SECRET_KEY=<random-hex-string>
 AIRFLOW__CORE__LOAD_EXAMPLES=false
 _AIRFLOW_WWW_USER_CREATE=true
 _AIRFLOW_WWW_USER_USERNAME=admin
 _AIRFLOW_WWW_USER_PASSWORD=<secure-password>
 ```
 
-Command override: `webserver`
+Command override: `api-server`
 
 #### Airflow Scheduler
 
-Same environment as webserver, with command override: `scheduler`
+Same environment as API server, with command override: `scheduler`
+
+#### Airflow Triggerer
+
+Same environment as API server, with command override: `triggerer`
 
 ### 4. Generate Secrets
 
@@ -134,7 +138,7 @@ Same environment as webserver, with command override: `scheduler`
 # Fernet key for Airflow encryption
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
-# Secret key for Airflow webserver
+# Secret key for Airflow API server
 python -c "import secrets; print(secrets.token_hex(32))"
 
 # Generate secure passwords
@@ -146,17 +150,25 @@ openssl rand -base64 32
 Start services in order:
 1. PostgreSQL
 2. Redis
-3. Airflow Scheduler (runs `airflow db migrate` on first start)
-4. Airflow Webserver
+3. Airflow Init (runs `airflow db migrate` on first start)
+4. Airflow Scheduler
+5. Airflow Triggerer
+6. Airflow API Server
 
-### 6. Resource Allocation
+### 6. Resource Allocation (4GB server)
 
-| Service | Memory | CPU |
-|---------|--------|-----|
-| PostgreSQL | 1GB | 1 |
-| Redis | 256MB | 0.5 |
-| Airflow Webserver | 512MB | 0.5 |
+| Service | Memory Limit | CPU |
+|---------|-------------|-----|
+| PostgreSQL | 1.5GB | 1 |
+| Redis | 300MB | 0.25 |
+| Airflow API Server | 768MB | 0.5 |
 | Airflow Scheduler | 512MB | 0.5 |
+| Airflow Triggerer | 256MB | 0.25 |
+| **Total** | **~3.3GB** | **2.5** |
+
+> Remaining ~700MB is reserved for the OS, Docker daemon, and page cache.
+> Airflow parallelism is capped at 8 concurrent tasks to prevent OOM.
+> All services have `mem_limit` enforced in docker-compose to prevent OOM cascades.
 
 ## CI/CD
 
@@ -228,8 +240,9 @@ infrastructure/
 │   ├── pg_hba.conf        # Authentication rules
 │   └── init-scripts/      # Database initialization
 ├── redis/
-│   ├── Dockerfile         # Alpine-based image
-│   └── redis.conf         # Cache configuration
+│   ├── Dockerfile              # Alpine-based image
+│   ├── specus-redis-entrypoint.sh  # Password injection entrypoint
+│   └── redis.conf              # Cache configuration
 ├── airflow/
 │   ├── Dockerfile         # Custom Airflow image
 │   ├── docker-compose.yml # Local development

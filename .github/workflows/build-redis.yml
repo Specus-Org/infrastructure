@@ -66,11 +66,13 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ./redis
           file: ./redis/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          load: ${{ github.event_name == 'pull_request' }}
           push: ${{ github.event_name != 'pull_request' && (github.event.inputs.push_image != 'false') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -80,9 +82,9 @@ jobs:
       - name: Test container
         if: github.event_name == 'pull_request'
         run: |
-          docker run -d --name test-redis ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker run -d --name test-redis -e REDIS_PASSWORD=test_password ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           sleep 5
-          docker exec test-redis redis-cli ping | grep -q PONG
+          docker exec test-redis redis-cli -a test_password ping | grep -q PONG
           docker stop test-redis
 
       - name: Image digest
