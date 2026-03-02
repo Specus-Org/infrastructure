@@ -2,7 +2,8 @@
 -- Specus PostgreSQL Extensions Initialization
 -- =============================================================================
 -- This script creates all required extensions for the Specus platform.
--- Extensions are created in the default 'postgres' database.
+-- Extensions are created in $POSTGRES_DB (specus by default).
+-- pg_cron requires cron.database_name in postgresql.conf to match this database.
 -- =============================================================================
 
 -- Enable pg_stat_statements for query performance monitoring
