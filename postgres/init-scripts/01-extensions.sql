@@ -18,6 +18,9 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- Enable pg_cron for in-database job scheduling
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
+-- Enable PostGIS for geospatial data types and functions
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 -- Enable ParadeDB pg_search for BM25 full-text search
 CREATE EXTENSION IF NOT EXISTS pg_search;
 

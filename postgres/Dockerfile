@@ -4,6 +4,7 @@
 # Multi-stage build for PostgreSQL 17 with production-ready extensions:
 # - pg_stat_statements, uuid-ossp, pg_trgm (contrib)
 # - pg_cron (job scheduling)
+# - PostGIS (geospatial)
 # - ParadeDB pg_search (BM25 full-text search)
 # - Apache AGE (graph database)
 # - auto_explain (query analysis)
@@ -41,13 +42,14 @@ RUN git clone --branch release/PG17/${AGE_VERSION} --depth 1 \
 FROM postgres:17-bookworm
 
 LABEL org.opencontainers.image.title="Specus PostgreSQL 17"
-LABEL org.opencontainers.image.description="PostgreSQL 17 with pg_cron, ParadeDB pg_search, Apache AGE, and contrib extensions"
+LABEL org.opencontainers.image.description="PostgreSQL 17 with pg_cron, PostGIS, ParadeDB pg_search, Apache AGE, and contrib extensions"
 LABEL org.opencontainers.image.source="https://github.com/adryanev/specus-infrastructure"
 
 # Install contrib extensions and pg_cron
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-contrib \
     postgresql-17-cron \
+    postgresql-17-postgis-3 \
     curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
