@@ -6,6 +6,9 @@ Single VPS running all services (PostgreSQL, Redis, Airflow, Dokploy, wg-easy).
 
 ```
 Internet ──→ WireGuard UDP 51820 (Public)
+           │
+           ├──→ HTTPS 443 (Traefik) ──→ wg-easy UI (vpn.specus.id)
+           │
            ↓ (after VPN connection)
            VPN Network 10.8.0.0/24
            ├── SSH 22
@@ -55,6 +58,7 @@ Allow all outbound traffic (default).
 - **Defense-in-depth**: This cloud firewall is the first layer. Services also bind to localhost or Docker networks.
 - **SSH is VPN-only**: You must connect to WireGuard VPN before SSH access is available.
 - **Database ports are VPN-only**: PostgreSQL and Redis are never exposed to the public internet.
-- **wg-easy UI is VPN-only**: Admin interface is only accessible after VPN connection.
+- **wg-easy UI port 51821 is VPN-only**: Direct admin interface access requires VPN connection.
+- **wg-easy HTTPS is public**: Optionally, a domain (e.g. vpn.specus.id) routes through Traefik on port 443 for HTTPS login. Access is protected by wg-easy's built-in username/password authentication. Use a strong password.
 - **HTTP/HTTPS are public**: Traefik handles TLS termination and routes to internal services.
 - **Dokploy deployments**: Because port 3000 is VPN-only, Dokploy cannot receive external webhooks (e.g., from GitHub). Configure Dokploy to use **polling-based** deployments, or trigger deploys manually / via SSH over the VPN.

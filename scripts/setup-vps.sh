@@ -52,6 +52,7 @@ log_info "  4. Set timezone to ${TIMEZONE}"
 log_info "  5. Enable unattended security upgrades"
 log_info "  6. Configure journald log limits"
 log_info "  7. Deploy wg-easy VPN server"
+log_info "  8. Configure HTTPS access via Traefik (optional)"
 echo ""
 
 confirm_or_exit "Proceed with VPS setup?"
@@ -230,16 +231,17 @@ mkdir -p /etc/wireguard
 
 cp "$SCRIPT_DIR/../wg-easy/docker-compose.yml" "$WG_EASY_DIR/docker-compose.yml"
 
-cat > "$WG_EASY_DIR/.env" << EOF
-INIT_ENABLED=true
-INIT_USERNAME=${WG_USERNAME}
-INIT_PASSWORD=${WG_PASSWORD}
-INIT_HOST=${WG_HOST}
-INIT_PORT=51820
-INIT_DNS=1.1.1.1
-INIT_IPV4_CIDR=10.8.0.0/24
-INIT_ALLOWED_IPS=10.8.0.0/24
-EOF
+# Use printf to avoid shell expansion mangling passwords with $, `, or \
+{
+    printf '%s\n' "INIT_ENABLED=true"
+    printf '%s\n' "INIT_USERNAME=${WG_USERNAME}"
+    printf '%s\n' "INIT_PASSWORD=${WG_PASSWORD}"
+    printf '%s\n' "INIT_HOST=${WG_HOST}"
+    printf '%s\n' "INIT_PORT=51820"
+    printf '%s\n' "INIT_DNS=1.1.1.1"
+    printf '%s\n' "INIT_IPV4_CIDR=10.8.0.0/24"
+    printf '%s\n' "INIT_ALLOWED_IPS=10.8.0.0/24"
+} > "$WG_EASY_DIR/.env"
 chmod 600 "$WG_EASY_DIR/.env"
 unset WG_PASSWORD
 
@@ -256,6 +258,71 @@ else
 fi
 
 # =============================================================================
+# 8. Configure HTTPS access via Traefik (optional)
+# =============================================================================
+CURRENT_STEP="HTTPS configuration"
+WG_EASY_DOMAIN=""
+TRAEFIK_DYNAMIC_DIR="/etc/dokploy/traefik/dynamic"
+TRAEFIK_TEMPLATE="$SCRIPT_DIR/../wg-easy/traefik-dynamic.yml.tpl"
+
+echo ""
+log_step "Configuring HTTPS access for wg-easy (optional)..."
+log_info "wg-easy v15 requires HTTPS for login from public networks."
+log_info "This step routes a domain through Dokploy's Traefik for TLS termination."
+echo ""
+read -p "Enter domain for wg-easy HTTPS (e.g. vpn.specus.id), or press Enter to skip: " WG_EASY_DOMAIN
+
+if [ -n "$WG_EASY_DOMAIN" ]; then
+    # Verify DNS resolves to this server
+    RESOLVED_IP=$(dig +short "$WG_EASY_DOMAIN" 2>/dev/null | tail -1)
+    if [ -z "$RESOLVED_IP" ]; then
+        log_warn "DNS for $WG_EASY_DOMAIN does not resolve yet"
+        log_warn "Make sure to create an A record pointing to $SERVER_IP before accessing HTTPS"
+    elif [ "$RESOLVED_IP" != "$SERVER_IP" ]; then
+        log_warn "DNS for $WG_EASY_DOMAIN resolves to $RESOLVED_IP (expected $SERVER_IP)"
+        log_warn "Let's Encrypt certificate issuance may fail until DNS is correct"
+    else
+        log_info "DNS verified: $WG_EASY_DOMAIN → $RESOLVED_IP"
+    fi
+
+    # Detect Docker bridge gateway IP (host accessible from inside containers)
+    DOCKER_HOST_IP=$(docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null)
+    if [ -z "$DOCKER_HOST_IP" ]; then
+        DOCKER_HOST_IP="172.17.0.1"
+        log_warn "Could not detect Docker bridge gateway, using default: $DOCKER_HOST_IP"
+    else
+        log_info "Docker bridge gateway: $DOCKER_HOST_IP"
+    fi
+
+    # Verify Traefik is running (Dokploy's built-in reverse proxy)
+    if ! docker ps --format '{{.Names}}' | grep -q "dokploy-traefik"; then
+        log_error "dokploy-traefik container is not running"
+        log_error "HTTPS setup requires Dokploy's Traefik. Skipping HTTPS configuration."
+        WG_EASY_DOMAIN=""
+    elif [ ! -d "$TRAEFIK_DYNAMIC_DIR" ]; then
+        log_error "Traefik dynamic config directory not found: $TRAEFIK_DYNAMIC_DIR"
+        log_error "Skipping HTTPS configuration."
+        WG_EASY_DOMAIN=""
+    elif [ ! -f "$TRAEFIK_TEMPLATE" ]; then
+        log_error "Traefik template not found: $TRAEFIK_TEMPLATE"
+        log_error "Skipping HTTPS configuration."
+        WG_EASY_DOMAIN=""
+    else
+        # Generate Traefik dynamic config from template
+        sed -e "s/__WG_EASY_DOMAIN__/${WG_EASY_DOMAIN}/g" \
+            -e "s/__DOCKER_HOST_IP__/${DOCKER_HOST_IP}/g" \
+            "$TRAEFIK_TEMPLATE" > "$TRAEFIK_DYNAMIC_DIR/wg-easy.yml"
+
+        log_info "Traefik config written to $TRAEFIK_DYNAMIC_DIR/wg-easy.yml"
+        log_info "Traefik will auto-detect the new config (no restart needed)"
+    fi
+fi
+
+if [ -z "$WG_EASY_DOMAIN" ]; then
+    log_info "HTTPS not configured. wg-easy UI available via VPN at http://<server-ip>:51821"
+fi
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo ""
@@ -269,9 +336,18 @@ log_info "  Timezone: ${TIMEZONE}"
 log_info "  Unattended upgrades: enabled"
 log_info "  Journald: 500MB max, 30-day retention"
 log_info "  wg-easy: running on ports 51820/udp + 51821/tcp"
+if [ -n "$WG_EASY_DOMAIN" ]; then
+    log_info "  HTTPS: https://${WG_EASY_DOMAIN} (via Traefik)"
+else
+    log_info "  HTTPS: not configured (VPN-only access)"
+fi
 echo ""
 log_info "Next steps:"
-log_info "  1. Access wg-easy UI at http://<server-ip>:51821 and log in"
+if [ -n "$WG_EASY_DOMAIN" ]; then
+    log_info "  1. Access wg-easy UI at https://${WG_EASY_DOMAIN}"
+else
+    log_info "  1. Access wg-easy UI at http://<server-ip>:51821 (via VPN)"
+fi
 log_info "  2. Remove INIT_* vars from $WG_EASY_DIR/.env (credentials stored in DB after first login)"
 log_info "  3. Run ./harden-ssh.sh to secure SSH access"
 log_info "  4. Configure Vultr cloud firewall (see firewall/vultr/specus-vps.md)"

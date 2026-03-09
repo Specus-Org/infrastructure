@@ -39,3 +39,5 @@ services:
 # 5. Client configs can be created and downloaded from the web UI
 # 6. INIT_* vars set credentials and VPN config on first startup only; remove from .env afterwards
 # 7. Password can be reset via: docker compose exec wg-easy cli db:admin:reset --password NEW
+# 8. HTTPS access: Dokploy's Traefik routes a domain to port 51821 via file provider
+#    (see traefik-dynamic.yml.tpl — Docker labels don't work with network_mode: host)
