@@ -9,6 +9,8 @@ Custom Docker images for the Specus platform, deployable to Dokploy as individua
 | PostgreSQL 17 | postgres:17-bookworm | Primary database with extensions |
 | Redis 7 | redis:7-alpine | Caching layer |
 | Airflow 3.1 | apache/airflow:3.1.7 | Workflow orchestration |
+| Garage | dxflrs/garage:v2.2.0 | S3-compatible object storage & CDN |
+| Garage WebUI | khairul169/garage-webui:latest | Admin UI for Garage |
 
 ## Quick Start
 
@@ -36,6 +38,7 @@ docker build -t specus-redis:7 ./redis
 
 # Airflow
 docker build -t specus-airflow:latest ./airflow
+
 ```
 
 ## PostgreSQL Extensions
@@ -77,6 +80,16 @@ SELECT extname, extversion FROM pg_extension ORDER BY extname;
 | save | "" | No persistence |
 | appendonly | no | No AOF |
 
+### Garage (S3 object storage + CDN)
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| db_engine | lmdb | Metadata storage engine |
+| replication_factor | 1 | Single-node (no redundancy) |
+| S3 API port | 3900 | Upload/manage objects (storage.specus.org) |
+| Web gateway port | 3902 | Public CDN (cdn.specus.org) |
+| Admin API port | 3903 | Bucket/key management (VPN-only) |
+
 ## Dokploy Deployment
 
 ### 1. Create Services
@@ -88,6 +101,7 @@ Create each service in Dokploy as a Docker image deployment:
 - **specus-airflow-api-server**: `ghcr.io/<username>/specus-airflow:latest`
 - **specus-airflow-scheduler**: `ghcr.io/<username>/specus-airflow:latest`
 - **specus-airflow-triggerer**: `ghcr.io/<username>/specus-airflow:latest`
+- **specus-garage**: Deploy `garage/docker-compose.yml` as a Dokploy compose service (includes Garage + WebUI)
 
 ### 2. Network Configuration
 
@@ -124,6 +138,20 @@ _AIRFLOW_WWW_USER_PASSWORD=<secure-password>
 
 Command override: `api-server`
 
+#### Garage (via compose `.env`)
+
+Copy `garage/.env.example` to `garage/.env` and fill in values. The compose file handles
+wiring between Garage and WebUI automatically.
+
+```
+GARAGE_RPC_SECRET=<openssl rand -hex 32>
+GARAGE_ADMIN_TOKEN=<openssl rand -hex 32>
+GARAGE_METRICS_TOKEN=<openssl rand -hex 32>
+GARAGE_WEBUI_AUTH=admin:<bcrypt-hash>
+```
+
+Generate bcrypt hash: `htpasswd -nbBC 10 "admin" "your-password"`
+
 #### Airflow Scheduler
 
 Same environment as API server, with command override: `scheduler`
@@ -143,6 +171,12 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 # Generate secure passwords
 openssl rand -base64 32
+
+# Garage secrets (hex-encoded)
+openssl rand -hex 32
+
+# Garage WebUI password (bcrypt hash)
+htpasswd -nbBC 10 "admin" "your-password"
 ```
 
 ### 5. Service Dependencies
@@ -150,10 +184,12 @@ openssl rand -base64 32
 Start services in order:
 1. PostgreSQL
 2. Redis
-3. Airflow Init (runs `airflow db migrate` on first start)
-4. Airflow Scheduler
-5. Airflow Triggerer
-6. Airflow API Server
+3. Garage
+4. Garage WebUI
+5. Airflow Init (runs `airflow db migrate` on first start)
+6. Airflow Scheduler
+7. Airflow Triggerer
+8. Airflow API Server
 
 ### 6. Resource Allocation (4GB server)
 
@@ -164,9 +200,11 @@ Start services in order:
 | Airflow API Server | 768MB | 0.5 |
 | Airflow Scheduler | 512MB | 0.5 |
 | Airflow Triggerer | 256MB | 0.25 |
-| **Total** | **~3.3GB** | **2.5** |
+| Garage | 256MB | 0.25 |
+| Garage WebUI | 128MB | 0.25 |
+| **Total** | **~3.7GB** | **3.0** |
 
-> Remaining ~700MB is reserved for the OS, Docker daemon, and page cache.
+> Remaining ~300MB is reserved for the OS, Docker daemon, and page cache.
 > Airflow parallelism is capped at 8 concurrent tasks to prevent OOM.
 > All services have `mem_limit` enforced in docker-compose to prevent OOM cascades.
 
@@ -188,6 +226,81 @@ ghcr.io/<username>/specus-airflow:latest
 ### Manual Build Trigger
 
 Go to Actions tab → Select workflow → Run workflow
+
+### 7. Garage Setup (storage.specus.org + cdn.specus.org)
+
+After deploying Garage, configure the bucket, DNS, and Dokploy routing:
+
+#### a) Initialize the Garage cluster (once)
+
+```bash
+# SSH into VPS, then exec into the Garage container
+docker exec -it <garage-container> /bin/sh
+
+# Check node status and copy the node ID
+garage status
+
+# Assign storage capacity to the node
+garage layout assign <node-id> --zone dc1 --capacity 50G
+garage layout apply --version 1
+```
+
+#### b) Create bucket and API key
+
+```bash
+# Create an API key for the application
+garage key create lexicon-app-key
+
+# Create the lexicon bucket
+garage bucket create lexicon
+
+# Grant read+write to the app key
+garage bucket allow --read --write lexicon --key lexicon-app-key
+
+# Enable public website access
+garage bucket website --allow lexicon
+
+# Alias the CDN domain to the bucket (web gateway resolves Host header)
+garage bucket alias set --global cdn.specus.org lexicon
+```
+
+#### c) Cloudflare DNS
+
+| Type | Name | Target | Proxy |
+|------|------|--------|-------|
+| A | storage | `<server-ip>` | Proxied (orange cloud) |
+| A | cdn | `<server-ip>` | Proxied (orange cloud) |
+
+Cloudflare provides SSL termination and caching in front of Traefik.
+
+#### d) Dokploy service — expose S3 API and web gateway
+
+In Dokploy, add **two domains** to the Garage service:
+
+**S3 API (for uploads)**:
+- **Domain**: `storage.specus.org`
+- **Container port**: `3900`
+- **HTTPS**: enabled
+
+**Web Gateway (public CDN)**:
+- **Domain**: `cdn.specus.org`
+- **Container port**: `3902`
+- **HTTPS**: enabled
+
+Dokploy/Traefik will automatically create the routing labels for both.
+
+#### e) Application .env
+
+```
+S3_ENDPOINT=https://storage.specus.org
+S3_REGION=garage
+S3_BUCKET=lexicon
+S3_ACCESS_KEY_ID=<from garage key create>
+S3_SECRET_ACCESS_KEY=<from garage key create>
+S3_PUBLIC_BASE_URL=https://cdn.specus.org/lexicon
+```
+
+Public URLs in CMS content: `https://cdn.specus.org/lexicon/uploads/image/{uuid}/{file.png}`
 
 ## Monitoring
 
@@ -217,6 +330,24 @@ redis-cli SLOWLOG GET 10
 redis-cli INFO keyspace
 ```
 
+### Garage
+
+Access the Garage WebUI at `http://<vps-ip>:3909` (VPN-only) for bucket/key management.
+
+```bash
+# Cluster status
+garage status
+
+# Bucket info
+garage bucket info lexicon
+
+# List API keys
+garage key list
+
+# Storage stats
+garage stats
+```
+
 ### Airflow
 
 Access the web UI at your configured domain or `http://localhost:8080` for local development.
@@ -227,7 +358,9 @@ Access the web UI at your configured domain or `http://localhost:8080` for local
 2. **PostgreSQL uses scram-sha-256** - Most secure password authentication
 3. **Redis requires password** - Protected mode is enabled
 4. **Airflow uses Fernet encryption** - Connections are encrypted at rest
-5. **GHCR tokens** - Use minimal permissions for CI/CD
+5. **Garage secrets via env vars** - RPC secret, admin token, and metrics token are never stored in config files
+6. **Garage S3 API is authenticated** - Public via `storage.specus.org` but requires S3 access key + secret (SigV4 signing). Web gateway (`cdn.specus.org`) is read-only CDN. Admin API (3903) and WebUI (3909) are VPN-only.
+7. **GHCR tokens** - Use minimal permissions for CI/CD
 
 ## Directory Structure
 
@@ -251,6 +384,10 @@ infrastructure/
 │   ├── docker-compose.yml # Local development
 │   ├── airflow.cfg        # Airflow configuration
 │   └── dags/              # DAG files
+├── garage/
+│   ├── docker-compose.yml # Garage + WebUI (Dokploy compose)
+│   ├── .env.example       # Garage + WebUI secrets
+│   └── garage.toml        # Storage & web gateway configuration
 └── README.md
 ```
 
