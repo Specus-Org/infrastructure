@@ -115,6 +115,9 @@ Ensure all services are on the same Dokploy network for internal communication.
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=<secure-password>
 POSTGRES_DB=specus
+SPECUS_APP_PASSWORD=<secure-password>
+AIRFLOW_DB_PASSWORD=<secure-password>
+AUTHENTIK_DB_PASSWORD=<secure-password>
 ```
 
 #### Redis

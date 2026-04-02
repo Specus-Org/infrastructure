@@ -1,8 +1,8 @@
 -- =============================================================================
 -- Specus PostgreSQL Schema Setup (Minimal)
 -- =============================================================================
--- Creates only the Airflow database. Application-specific schemas should be
--- created by the respective services when needed.
+-- Creates Airflow and Authentik databases. Application-specific schemas should
+-- be created by the respective services when needed.
 -- =============================================================================
 
 -- Create Airflow database if it doesn't exist
@@ -14,6 +14,25 @@ DO $$
 BEGIN
     IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'airflow') THEN
         GRANT ALL PRIVILEGES ON DATABASE airflow TO airflow;
+    END IF;
+END
+$$;
+
+-- =============================================================================
+-- Create Authentik database with ownership transfer
+-- =============================================================================
+-- Authentik runs Django migrations that require full schema control (CREATE,
+-- ALTER, DROP on tables/sequences/indexes). Ownership grants this implicitly.
+-- =============================================================================
+
+SELECT 'CREATE DATABASE authentik'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'authentik')\gexec
+
+-- Transfer ownership so Authentik can manage its own schema migrations
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'authentik') THEN
+        EXECUTE 'ALTER DATABASE authentik OWNER TO authentik';
     END IF;
 END
 $$;
