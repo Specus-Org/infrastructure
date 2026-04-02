@@ -1,0 +1,38 @@
+# Traefik Configuration Reference for Authentik
+#
+# NOTE: This file is for REFERENCE ONLY.
+# Actual routing is configured via Dokploy's Domain UI.
+#
+# In Dokploy, configure:
+#   - Host: auth.specus.org
+#   - Container Port: 9000
+#   - HTTPS: Enabled
+#   - Certificate: Let's Encrypt
+
+# =============================================================================
+# EQUIVALENT TRAEFIK DYNAMIC CONFIG (for reference)
+# =============================================================================
+
+http:
+  routers:
+    authentik:
+      rule: Host(`auth.specus.org`)
+      entryPoints:
+        - websecure
+      service: authentik
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - authentik-ratelimit
+
+  services:
+    authentik:
+      loadBalancer:
+        servers:
+          - url: "http://authentik-server:9000"
+
+  middlewares:
+    authentik-ratelimit:
+      rateLimit:
+        average: 100
+        burst: 50

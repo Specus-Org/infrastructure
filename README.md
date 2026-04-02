@@ -11,6 +11,7 @@ Custom Docker images for the Specus platform, deployable to Dokploy as individua
 | Airflow 3.1 | apache/airflow:3.1.7 | Workflow orchestration |
 | Garage | dxflrs/garage:v2.2.0 | S3-compatible object storage & CDN |
 | Garage WebUI | khairul169/garage-webui:latest | Admin UI for Garage |
+| Authentik | ghcr.io/goauthentik/server | Identity provider & SSO |
 
 ## Quick Start
 
@@ -102,6 +103,7 @@ Create each service in Dokploy as a Docker image deployment:
 - **specus-airflow-scheduler**: `ghcr.io/<username>/specus-airflow:latest`
 - **specus-airflow-triggerer**: `ghcr.io/<username>/specus-airflow:latest`
 - **specus-garage**: Deploy `garage/docker-compose.yml` as a Dokploy compose service (includes Garage + WebUI)
+- **specus-authentik**: Deploy `authentik/docker-compose.yml` as a Dokploy compose service (server + worker)
 
 ### 2. Network Configuration
 
@@ -151,6 +153,18 @@ GARAGE_WEBUI_AUTH=admin:<bcrypt-hash>
 ```
 
 Generate bcrypt hash: `htpasswd -nbBC 10 "admin" "your-password"`
+
+#### Authentik (via compose `.env`)
+
+Copy `authentik/.env.example` to `authentik/.env` and fill in values. See `authentik/init-authentik.sql`
+for database setup.
+
+```
+AUTHENTIK_SECRET_KEY=<openssl rand -base64 60 | tr -d '\n'>
+AUTHENTIK_BOOTSTRAP_PASSWORD=<openssl rand -base64 32>
+AUTHENTIK_DB_PASSWORD=<openssl rand -base64 32>
+REDIS_PASSWORD=<same as core stack>
+```
 
 #### Airflow Scheduler
 
@@ -360,7 +374,8 @@ Access the web UI at your configured domain or `http://localhost:8080` for local
 4. **Airflow uses Fernet encryption** - Connections are encrypted at rest
 5. **Garage secrets via env vars** - RPC secret, admin token, and metrics token are never stored in config files
 6. **Garage S3 API is authenticated** - Public via `storage.specus.org` but requires S3 access key + secret (SigV4 signing). Web gateway (`cdn.specus.org`) is read-only CDN. Admin API (3903) and WebUI (3909) are VPN-only.
-7. **GHCR tokens** - Use minimal permissions for CI/CD
+7. **Authentik via Traefik only** - No direct port exposure; rate-limited at 100 req/min via Traefik middleware
+8. **GHCR tokens** - Use minimal permissions for CI/CD
 
 ## Directory Structure
 
@@ -388,6 +403,11 @@ infrastructure/
 │   ├── docker-compose.yml # Garage + WebUI (Dokploy compose)
 │   ├── .env.example       # Garage + WebUI secrets
 │   └── garage.toml        # Storage & web gateway configuration
+├── authentik/
+│   ├── docker-compose.yml        # Server + Worker (Dokploy compose)
+│   ├── .env.example              # All Authentik config
+│   ├── init-authentik.sql        # Database initialization
+│   └── traefik-config.example.yml # Traefik reference
 └── README.md
 ```
 

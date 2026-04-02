@@ -1,6 +1,6 @@
 # Vultr Cloud Firewall: Specus VPS
 
-Single VPS running all services (PostgreSQL, Redis, Airflow, Garage, Dokploy, wg-easy).
+Single VPS running all services (PostgreSQL, Redis, Airflow, Garage, Authentik, Dokploy, wg-easy).
 
 ## Architecture
 
@@ -10,6 +10,7 @@ Internet ──→ WireGuard UDP 51820 (Public)
            ├──→ HTTPS 443 (Traefik) ──→ wg-easy UI    (vpn.specus.id)
            │                        ──→ Garage S3 API (storage.specus.org)
            │                        ──→ Garage CDN    (cdn.specus.org)
+           │                        ──→ Authentik     (auth.specus.org)
            │
            ↓ (after VPN connection)
            VPN Network 10.8.0.0/24
@@ -71,4 +72,5 @@ Allow all outbound traffic (default).
 - **HTTP/HTTPS are public**: Traefik handles TLS termination and routes to internal services.
 - **Garage S3 API (port 3900) is public via Traefik**: Served as `storage.specus.org` on port 443. Authenticated via S3 access key + secret key. Direct port 3900 access remains VPN-only.
 - **Garage web gateway (port 3902) is public via Traefik**: Served as `cdn.specus.org` on port 443. Read-only public CDN. The Admin API (3903) is VPN-only.
+- **Authentik (port 9000) is public via Traefik**: Served as `auth.specus.org` on port 443. Rate-limited (100 req/min). No direct port exposure needed — accessed only through Traefik.
 - **Dokploy deployments**: Because port 3000 is VPN-only, Dokploy cannot receive external webhooks (e.g., from GitHub). Configure Dokploy to use **polling-based** deployments, or trigger deploys manually / via SSH over the VPN.
