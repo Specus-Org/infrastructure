@@ -6,9 +6,8 @@
 # This script runs before SQL init scripts and allows secure password injection.
 #
 # Environment Variables:
-#   SPECUS_APP_PASSWORD  - Password for specus_app role (required for production)
-#   AIRFLOW_DB_PASSWORD  - Password for airflow role (required for production)
-#   AUTHENTIK_DB_PASSWORD - Password for authentik role (required for production)
+#   SPECUS_APP_PASSWORD - Password for specus_app role (required for production)
+#   AIRFLOW_DB_PASSWORD - Password for airflow role (required for production)
 #
 # If passwords are not set, random passwords are generated (for development only).
 # =============================================================================
@@ -33,12 +32,6 @@ if [ -z "$AIRFLOW_DB_PASSWORD" ]; then
     echo "WARNING: For production, set AIRFLOW_DB_PASSWORD environment variable."
 fi
 
-if [ -z "$AUTHENTIK_DB_PASSWORD" ]; then
-    AUTHENTIK_DB_PASSWORD=$(generate_random_password)
-    echo "WARNING: AUTHENTIK_DB_PASSWORD not set. Generated random password."
-    echo "WARNING: For production, set AUTHENTIK_DB_PASSWORD environment variable."
-fi
-
 echo "Setting up database roles..."
 
 # Create roles with passwords from environment variables
@@ -50,13 +43,11 @@ echo "Setting up database roles..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
     -v specus_pw="$SPECUS_APP_PASSWORD" \
     -v airflow_pw="$AIRFLOW_DB_PASSWORD" \
-    -v authentik_pw="$AUTHENTIK_DB_PASSWORD" \
     <<-'EOSQL'
     -- Inject passwords into session-level GUC parameters so they are
     -- accessible inside DO blocks via current_setting().
     SELECT set_config('specus.app_password', :'specus_pw', false);
     SELECT set_config('specus.airflow_password', :'airflow_pw', false);
-    SELECT set_config('specus.authentik_password', :'authentik_pw', false);
 
     -- Create specus_app role if it doesn't exist
     DO $$
@@ -88,25 +79,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
     END
     $$;
 
-    -- Create authentik role if it doesn't exist
-    DO $$
-    DECLARE
-        _pw text := current_setting('specus.authentik_password');
-    BEGIN
-        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authentik') THEN
-            EXECUTE format('CREATE ROLE authentik WITH LOGIN PASSWORD %L', _pw);
-            RAISE NOTICE 'Created authentik role with secure password.';
-        ELSE
-            EXECUTE format('ALTER ROLE authentik WITH PASSWORD %L', _pw);
-            RAISE NOTICE 'Updated authentik role password.';
-        END IF;
-    END
-    $$;
-
     -- Clear passwords from session GUC parameters
     SELECT set_config('specus.app_password', '', false);
     SELECT set_config('specus.airflow_password', '', false);
-    SELECT set_config('specus.authentik_password', '', false);
 EOSQL
 
 echo "Database roles setup complete."
