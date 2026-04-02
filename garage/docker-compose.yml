@@ -1,0 +1,69 @@
+# =============================================================================
+# Specus Garage — S3-Compatible Object Storage + WebUI
+# =============================================================================
+# Deploy as a Dokploy compose service. After deploying:
+#   1. Add domain cdn.specus.org   → service: garage,       port: 3902
+#   2. Add domain storage.specus.org → service: garage,     port: 3900
+#   3. Initialize the cluster (see README § "Garage Setup")
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Garage — S3-compatible object storage
+  # ---------------------------------------------------------------------------
+  garage:
+    image: dxflrs/garage:v2.2.0
+    container_name: specus-garage
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+    ports:
+      # S3 API — public via Traefik (storage.specus.org), VPN-only direct
+      - "3900:3900"
+      # RPC — internal only (cluster communication)
+      - "3901:3901"
+      # Web gateway — public via Traefik (cdn.specus.org)
+      - "3902:3902"
+      # Admin API — VPN-only
+      - "3903:3903"
+    healthcheck:
+      test: ["CMD", "/garage", "stats", "-a"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    mem_limit: 256m
+    memswap_limit: 256m
+
+  # ---------------------------------------------------------------------------
+  # Garage WebUI — Admin interface for bucket/key management
+  # ---------------------------------------------------------------------------
+  garage-webui:
+    image: khairul169/garage-webui:latest
+    container_name: specus-garage-webui
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # WebUI — VPN-only
+      - "3909:3909"
+    depends_on:
+      garage:
+        condition: service_healthy
+    mem_limit: 128m
+    memswap_limit: 128m
+
+volumes:
+  garage-meta:
+  garage-data:
+
+# Notes:
+# 1. Dokploy automatically adds its Traefik-connected network to these services
+# 2. Configure domains in Dokploy UI — no Traefik labels needed in this file
+# 3. Inter-service communication uses compose service names (garage, garage-webui)
+# 4. The WebUI talks to Garage via internal Docker network (http://garage:3903)
+# 5. Ports 3900/3902 are also routed through Traefik for public HTTPS access
+# 6. Ports 3903/3909 are VPN-only (Vultr firewall restricts to 10.8.0.0/24)
+# 7. After first deploy, run garage CLI via: docker exec -it specus-garage /garage status

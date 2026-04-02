@@ -1,0 +1,46 @@
+# =============================================================================
+# Specus Garage — S3-Compatible Object Storage
+# =============================================================================
+# Single-node configuration optimized for 4 GB VPS.
+# Secrets (rpc_secret, admin_token, metrics_token) are injected via
+# environment variables — do NOT put them in this file.
+#
+# Env vars: GARAGE_RPC_SECRET, GARAGE_ADMIN_TOKEN, GARAGE_METRICS_TOKEN
+# Generate:  openssl rand -hex 32
+# =============================================================================
+
+# ── Storage paths ────────────────────────────────────────────────────────────
+metadata_dir = "/var/lib/garage/meta"
+data_dir     = "/var/lib/garage/data"
+
+# ── Engine & replication ─────────────────────────────────────────────────────
+db_engine          = "lmdb"
+replication_factor = 1
+
+# ── RPC (inter-node communication) ──────────────────────────────────────────
+# Secret is provided via GARAGE_RPC_SECRET env var.
+rpc_bind_addr    = "[::]:3901"
+bootstrap_peers  = []
+
+# ── S3 API (upload / manage objects) ─────────────────────────────────────────
+# Dokploy exposes this port via Traefik with domain storage.specus.org.
+# Authenticated via S3 access key + secret key (SigV4 signing).
+[s3_api]
+api_bind_addr = "[::]:3900"
+s3_region     = "garage"
+root_domain   = ".storage.specus.org"
+
+# ── S3 Web Gateway (public CDN) ────────────────────────────────────────────
+# Serves bucket contents over HTTP on port 3902.
+# Dokploy exposes this port via Traefik with domain cdn.specus.org.
+#
+# Bucket resolution: if the Host header matches a global alias
+# (e.g. cdn.specus.org → lexicon bucket), Garage serves that bucket.
+[s3_web]
+bind_addr   = "[::]:3902"
+root_domain = ".cdn.specus.org"
+
+# ── Admin API (VPN-only) ───────────────────────────────────────────────────
+# Token is provided via GARAGE_ADMIN_TOKEN env var.
+[admin]
+api_bind_addr = "[::]:3903"

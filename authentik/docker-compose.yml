@@ -1,0 +1,148 @@
+# Authentik Identity Provider Stack
+# SSO service for the Specus platform
+#
+# Prerequisites:
+#   1. Core stack running (PostgreSQL, Redis)
+#   2. Database initialized: run init-authentik.sql manually
+#   3. Environment configured: cp .env.example .env && edit
+#   4. Traefik configured in Dokploy (see traefik-config.example.yml)
+#
+# Usage:
+#   docker-compose --env-file .env up -d
+#
+# Access:
+#   UI: https://auth.specus.org (configure in Dokploy)
+#   Internal: http://authentik-server:9000
+
+services:
+  authentik-server:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2026.2.1}
+    container_name: specus-authentik-server
+    hostname: authentik-server
+    command: server
+    restart: unless-stopped
+    environment:
+      # Core configuration
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+
+      # PostgreSQL (uses core stack)
+      AUTHENTIK_POSTGRESQL__HOST: ${POSTGRES_HOST:-specus-postgres}
+      AUTHENTIK_POSTGRESQL__PORT: ${POSTGRES_PORT:-5432}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_DB_USER:-authentik_user}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+
+      # Redis (uses core stack, DB 1)
+      AUTHENTIK_REDIS__HOST: ${REDIS_HOST:-specus-redis}
+      AUTHENTIK_REDIS__PORT: ${REDIS_PORT:-6379}
+      AUTHENTIK_REDIS__DB: ${AUTHENTIK_REDIS_DB:-1}
+      AUTHENTIK_REDIS__PASSWORD: ${REDIS_PASSWORD}
+
+      # Error reporting (disabled by default)
+      AUTHENTIK_ERROR_REPORTING__ENABLED: ${AUTHENTIK_ERROR_REPORTING:-false}
+
+      # Metrics (for monitoring)
+      AUTHENTIK_METRICS__ENABLED: ${AUTHENTIK_METRICS_ENABLED:-true}
+
+      # S3 Storage (Garage) - stores media files on Garage S3
+      AUTHENTIK_STORAGE__MEDIA__BACKEND: s3
+      AUTHENTIK_STORAGE__MEDIA__S3__ENDPOINT: ${AUTHENTIK_S3_ENDPOINT:-https://storage.specus.org}
+      AUTHENTIK_STORAGE__MEDIA__S3__ACCESS_KEY: ${AUTHENTIK_S3_ACCESS_KEY}
+      AUTHENTIK_STORAGE__MEDIA__S3__SECRET_KEY: ${AUTHENTIK_S3_SECRET_KEY}
+      AUTHENTIK_STORAGE__MEDIA__S3__BUCKET_NAME: ${AUTHENTIK_S3_BUCKET:-authentik}
+      AUTHENTIK_STORAGE__MEDIA__S3__REGION: ${AUTHENTIK_S3_REGION:-garage}
+    volumes:
+      - authentik-templates:/templates
+    networks:
+      - authentik-internal
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2026.2.1}
+    container_name: specus-authentik-worker
+    hostname: authentik-worker
+    command: worker
+    restart: unless-stopped
+    environment:
+      # Core configuration
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+
+      # PostgreSQL (uses core stack)
+      AUTHENTIK_POSTGRESQL__HOST: ${POSTGRES_HOST:-specus-postgres}
+      AUTHENTIK_POSTGRESQL__PORT: ${POSTGRES_PORT:-5432}
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_DB_USER:-authentik_user}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+
+      # Redis (uses core stack, DB 1)
+      AUTHENTIK_REDIS__HOST: ${REDIS_HOST:-specus-redis}
+      AUTHENTIK_REDIS__PORT: ${REDIS_PORT:-6379}
+      AUTHENTIK_REDIS__DB: ${AUTHENTIK_REDIS_DB:-1}
+      AUTHENTIK_REDIS__PASSWORD: ${REDIS_PASSWORD}
+
+      # Bootstrap admin (first run only - must be on worker)
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@specus.org}
+
+      # Email configuration
+      AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL_HOST:-smtp.gmail.com}
+      AUTHENTIK_EMAIL__PORT: ${AUTHENTIK_EMAIL_PORT:-587}
+      AUTHENTIK_EMAIL__USE_TLS: ${AUTHENTIK_EMAIL_USE_TLS:-true}
+      AUTHENTIK_EMAIL__USERNAME: ${AUTHENTIK_EMAIL_USERNAME:-noreply@specus.org}
+      AUTHENTIK_EMAIL__PASSWORD: ${AUTHENTIK_EMAIL_PASSWORD}
+      AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL_FROM:-noreply@specus.org}
+
+      # S3 Storage (Garage) - must match server configuration
+      AUTHENTIK_STORAGE__MEDIA__BACKEND: s3
+      AUTHENTIK_STORAGE__MEDIA__S3__ENDPOINT: ${AUTHENTIK_S3_ENDPOINT:-https://storage.specus.org}
+      AUTHENTIK_STORAGE__MEDIA__S3__ACCESS_KEY: ${AUTHENTIK_S3_ACCESS_KEY}
+      AUTHENTIK_STORAGE__MEDIA__S3__SECRET_KEY: ${AUTHENTIK_S3_SECRET_KEY}
+      AUTHENTIK_STORAGE__MEDIA__S3__BUCKET_NAME: ${AUTHENTIK_S3_BUCKET:-authentik}
+      AUTHENTIK_STORAGE__MEDIA__S3__REGION: ${AUTHENTIK_S3_REGION:-garage}
+    volumes:
+      - authentik-templates:/templates
+      - authentik-certs:/certs
+    networks:
+      - authentik-internal
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+volumes:
+  authentik-templates:
+    driver: local
+  authentik-certs:
+    driver: local
+
+networks:
+  authentik-internal:
+    driver: bridge
+  dokploy-network:
+    external: true
