@@ -205,7 +205,7 @@ Start services in order:
 7. Airflow Triggerer
 8. Airflow API Server
 
-### 6. Resource Allocation (4GB server)
+### 6. Resource Allocation
 
 | Service | Memory Limit | CPU |
 |---------|-------------|-----|
@@ -216,11 +216,12 @@ Start services in order:
 | Airflow Triggerer | 256MB | 0.25 |
 | Garage | 256MB | 0.25 |
 | Garage WebUI | 128MB | 0.25 |
-| **Total** | **~3.7GB** | **3.0** |
+| Authentik Server | 2GB | 2 |
+| Authentik Worker | 1GB | 1 |
+| **Total** | **~6.7GB** | **6.0** |
 
-> Remaining ~300MB is reserved for the OS, Docker daemon, and page cache.
 > Airflow parallelism is capped at 8 concurrent tasks to prevent OOM.
-> All services have `mem_limit` enforced in docker-compose to prevent OOM cascades.
+> All services have memory limits enforced in docker-compose to prevent OOM cascades.
 
 ## CI/CD
 

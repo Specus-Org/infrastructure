@@ -30,7 +30,7 @@ services:
       # Admin API — VPN-only
       - "3903:3903"
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/3900' 2>/dev/null"]
+      test: ["CMD", "/garage", "stats", "-a"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -66,4 +66,4 @@ volumes:
 # 4. The WebUI talks to Garage via internal Docker network (http://garage:3903)
 # 5. Ports 3900/3902 are also routed through Traefik for public HTTPS access
 # 6. Ports 3903/3909 are VPN-only (Vultr firewall restricts to 10.8.0.0/24)
-# 7. After first deploy, exec into garage to initialize: docker exec -it specus-garage /bin/sh
+# 7. After first deploy, run garage CLI via: docker exec -it specus-garage /garage status
