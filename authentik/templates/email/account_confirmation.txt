@@ -1,0 +1,7 @@
+{% load i18n %}{% trans "Hi" %} {{ user.name|default:user.username }},
+
+{% trans "Please confirm your email address to activate your account." %}
+
+{% trans "Confirm email" %}: {{ url }}
+
+{% trans "If you did not sign up, you can ignore this email." %}

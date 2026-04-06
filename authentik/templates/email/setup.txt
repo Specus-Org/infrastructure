@@ -1,0 +1,3 @@
+{% load i18n %}{% trans "This is a test email to verify that your email configuration is working correctly." %}
+
+{% trans "If you received this, your email delivery is set up and ready to go." %}

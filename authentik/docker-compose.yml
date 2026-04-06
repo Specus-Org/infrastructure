@@ -52,7 +52,7 @@ services:
       AUTHENTIK_STORAGE__MEDIA__S3__BUCKET_NAME: ${AUTHENTIK_S3_BUCKET:-authentik}
       AUTHENTIK_STORAGE__MEDIA__S3__REGION: ${AUTHENTIK_S3_REGION:-garage}
     volumes:
-      - authentik-templates:/templates
+      - ./templates:/templates:ro
     networks:
       - authentik-internal
       - dokploy-network
@@ -99,13 +99,13 @@ services:
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
       AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@specus.org}
 
-      # Email configuration
-      AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL_HOST:-smtp.gmail.com}
+      # Email configuration (SendGrid SMTP relay)
+      AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL_HOST:-smtp.sendgrid.net}
       AUTHENTIK_EMAIL__PORT: ${AUTHENTIK_EMAIL_PORT:-587}
       AUTHENTIK_EMAIL__USE_TLS: ${AUTHENTIK_EMAIL_USE_TLS:-true}
-      AUTHENTIK_EMAIL__USERNAME: ${AUTHENTIK_EMAIL_USERNAME:-noreply@specus.org}
+      AUTHENTIK_EMAIL__USERNAME: ${AUTHENTIK_EMAIL_USERNAME:-apikey}
       AUTHENTIK_EMAIL__PASSWORD: ${AUTHENTIK_EMAIL_PASSWORD}
-      AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL_FROM:-noreply@specus.org}
+      AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL_FROM:-noreply@specus.io}
 
       # S3 Storage (Garage) - must match server configuration
       AUTHENTIK_STORAGE__MEDIA__BACKEND: s3
@@ -115,7 +115,7 @@ services:
       AUTHENTIK_STORAGE__MEDIA__S3__BUCKET_NAME: ${AUTHENTIK_S3_BUCKET:-authentik}
       AUTHENTIK_STORAGE__MEDIA__S3__REGION: ${AUTHENTIK_S3_REGION:-garage}
     volumes:
-      - authentik-templates:/templates
+      - ./templates:/templates:ro
       - authentik-certs:/certs
     networks:
       - authentik-internal
@@ -136,8 +136,6 @@ services:
           memory: 512M
 
 volumes:
-  authentik-templates:
-    driver: local
   authentik-certs:
     driver: local
 
