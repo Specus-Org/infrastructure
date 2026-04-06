@@ -1,0 +1,5 @@
+{% load i18n %}{{ title }}
+
+{{ body }}
+
+{% trans "This is an automated notification from Specus." %}

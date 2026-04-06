@@ -1,0 +1,47 @@
+{% load i18n %}{% load humanize %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% trans "You're invited" %}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#ffffff;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,'Open Sans','Helvetica Neue',sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;padding:48px 20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding:0 0 40px;">
+              <span style="font-size:18px;font-weight:600;color:#033d8b;letter-spacing:-0.3px;">Specus</span>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#1f2328;">
+                {% trans "Hi," %}
+              </p>
+              <p style="margin:0 0 32px;font-size:15px;line-height:1.7;color:#1f2328;">
+                {% trans "You have been invited to join Specus. Use the button below to accept the invitation and set up your account." %}
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 0 32px;">
+              <a href="{{ url }}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:10px 24px;font-size:14px;font-weight:500;color:#ffffff;background-color:#033d8b;border-radius:6px;text-decoration:none;">{% trans "Accept invitation" %}</a>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 0 0;border-top:1px solid #e2e8f0;">
+              <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#818b98;">
+                {% blocktrans with expiry=expires|naturaltime %}This link will expire {{ expiry }}.{% endblocktrans %}
+                {% trans "If you did not expect this invitation, you can ignore this email." %}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

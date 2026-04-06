@@ -1,0 +1,7 @@
+{% load i18n %}{% load humanize %}{% trans "Hi," %}
+
+{% trans "You have been invited to join Specus. Use the link below to accept the invitation and set up your account." %}
+
+{% trans "Accept invitation" %}: {{ url }}
+
+{% blocktrans with expiry=expires|naturaltime %}This link will expire {{ expiry }}.{% endblocktrans %} {% trans "If you did not expect this invitation, you can ignore this email." %}
