@@ -4,7 +4,7 @@
 # Actual routing is configured via Dokploy's Domain UI.
 #
 # In Dokploy, configure:
-#   - Host: auth.specus.org
+#   - Host: auth.procurelens.org
 #   - Container Port: 9000
 #   - HTTPS: Enabled
 #   - Certificate: Let's Encrypt
@@ -16,7 +16,7 @@
 http:
   routers:
     authentik:
-      rule: Host(`auth.specus.org`)
+      rule: Host(`auth.procurelens.org`)
       entryPoints:
         - websecure
       service: authentik

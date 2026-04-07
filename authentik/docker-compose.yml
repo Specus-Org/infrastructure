@@ -11,7 +11,7 @@
 #   docker-compose --env-file .env up -d
 #
 # Access:
-#   UI: https://auth.specus.org (configure in Dokploy)
+#   UI: https://auth.procurelens.org (configure in Dokploy)
 #   Internal: http://authentik-server:9000
 
 services:
@@ -26,14 +26,14 @@ services:
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
 
       # PostgreSQL (uses core stack)
-      AUTHENTIK_POSTGRESQL__HOST: ${POSTGRES_HOST:-specus-postgres}
+      AUTHENTIK_POSTGRESQL__HOST: ${POSTGRES_HOST:-specus-production-database-rkpsij}
       AUTHENTIK_POSTGRESQL__PORT: ${POSTGRES_PORT:-5432}
       AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
       AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_DB_USER:-authentik_user}
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
 
       # Redis (uses core stack, DB 1)
-      AUTHENTIK_REDIS__HOST: ${REDIS_HOST:-specus-redis}
+      AUTHENTIK_REDIS__HOST: ${REDIS_HOST:-specus-production-redis-h08jhy}
       AUTHENTIK_REDIS__PORT: ${REDIS_PORT:-6379}
       AUTHENTIK_REDIS__DB: ${AUTHENTIK_REDIS_DB:-1}
       AUTHENTIK_REDIS__PASSWORD: ${REDIS_PASSWORD}
@@ -46,7 +46,7 @@ services:
 
       # S3 Storage (Garage) - stores media files on Garage S3
       AUTHENTIK_STORAGE__MEDIA__BACKEND: s3
-      AUTHENTIK_STORAGE__MEDIA__S3__ENDPOINT: ${AUTHENTIK_S3_ENDPOINT:-https://storage.specus.org}
+      AUTHENTIK_STORAGE__MEDIA__S3__ENDPOINT: ${AUTHENTIK_S3_ENDPOINT:-https://storage.procurelens.org}
       AUTHENTIK_STORAGE__MEDIA__S3__ACCESS_KEY: ${AUTHENTIK_S3_ACCESS_KEY}
       AUTHENTIK_STORAGE__MEDIA__S3__SECRET_KEY: ${AUTHENTIK_S3_SECRET_KEY}
       AUTHENTIK_STORAGE__MEDIA__S3__BUCKET_NAME: ${AUTHENTIK_S3_BUCKET:-authentik}
@@ -82,14 +82,14 @@ services:
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
 
       # PostgreSQL (uses core stack)
-      AUTHENTIK_POSTGRESQL__HOST: ${POSTGRES_HOST:-specus-postgres}
+      AUTHENTIK_POSTGRESQL__HOST: ${POSTGRES_HOST:-specus-production-database-rkpsij}
       AUTHENTIK_POSTGRESQL__PORT: ${POSTGRES_PORT:-5432}
       AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DB_NAME:-authentik}
       AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_DB_USER:-authentik_user}
       AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
 
       # Redis (uses core stack, DB 1)
-      AUTHENTIK_REDIS__HOST: ${REDIS_HOST:-specus-redis}
+      AUTHENTIK_REDIS__HOST: ${REDIS_HOST:-specus-production-redis-h08jhy}
       AUTHENTIK_REDIS__PORT: ${REDIS_PORT:-6379}
       AUTHENTIK_REDIS__DB: ${AUTHENTIK_REDIS_DB:-1}
       AUTHENTIK_REDIS__PASSWORD: ${REDIS_PASSWORD}
@@ -97,7 +97,7 @@ services:
       # Bootstrap admin (first run only - must be on worker)
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
-      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@specus.org}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@procurelens.org}
 
       # Email configuration (SendGrid SMTP relay)
       AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL_HOST:-smtp.sendgrid.net}
@@ -105,11 +105,11 @@ services:
       AUTHENTIK_EMAIL__USE_TLS: ${AUTHENTIK_EMAIL_USE_TLS:-true}
       AUTHENTIK_EMAIL__USERNAME: ${AUTHENTIK_EMAIL_USERNAME:-apikey}
       AUTHENTIK_EMAIL__PASSWORD: ${AUTHENTIK_EMAIL_PASSWORD}
-      AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL_FROM:-noreply@specus.io}
+      AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL_FROM:-noreply@procurelens.org}
 
       # S3 Storage (Garage) - must match server configuration
       AUTHENTIK_STORAGE__MEDIA__BACKEND: s3
-      AUTHENTIK_STORAGE__MEDIA__S3__ENDPOINT: ${AUTHENTIK_S3_ENDPOINT:-https://storage.specus.org}
+      AUTHENTIK_STORAGE__MEDIA__S3__ENDPOINT: ${AUTHENTIK_S3_ENDPOINT:-https://storage.procurelens.org}
       AUTHENTIK_STORAGE__MEDIA__S3__ACCESS_KEY: ${AUTHENTIK_S3_ACCESS_KEY}
       AUTHENTIK_STORAGE__MEDIA__S3__SECRET_KEY: ${AUTHENTIK_S3_SECRET_KEY}
       AUTHENTIK_STORAGE__MEDIA__S3__BUCKET_NAME: ${AUTHENTIK_S3_BUCKET:-authentik}
