@@ -15,7 +15,10 @@ services:
     image: dxflrs/garage:v2.2.0
     container_name: specus-garage
     restart: unless-stopped
-    env_file: .env
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
+      GARAGE_ADMIN_TOKEN: ${GARAGE_ADMIN_TOKEN}
+      GARAGE_METRICS_TOKEN: ${GARAGE_METRICS_TOKEN}
     volumes:
       - ./garage.toml:/etc/garage.toml:ro
       - garage-meta:/var/lib/garage/meta
@@ -45,7 +48,12 @@ services:
     image: khairul169/garage-webui:latest
     container_name: specus-garage-webui
     restart: unless-stopped
-    env_file: .env
+    environment:
+      API_BASE_URL: ${API_BASE_URL:-http://garage:3903}
+      API_ADMIN_KEY: ${GARAGE_ADMIN_TOKEN}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://garage:3900}
+      S3_REGION: ${S3_REGION:-garage}
+      AUTH_USER_PASS: ${AUTH_USER_PASS:-}
     ports:
       # WebUI — VPN-only
       - "3909:3909"
