@@ -70,10 +70,10 @@ After redeployment, update the bucket alias so the web gateway maps `cdn.specus.
 
 ```bash
 # Add new alias
-docker exec -it <garage-container> garage bucket alias set --global cdn.specus.biz lexicon
+docker exec -it <garage-container> garage bucket alias cdn.specus.biz lexicon
 
 # Remove old alias
-docker exec -it <garage-container> garage bucket alias unset --global cdn.procurelens.org
+docker exec -it <garage-container> garage bucket unalias cdn.procurelens.org
 ```
 
 **Verify**: `curl https://cdn.specus.biz/lexicon/` → should list or serve bucket contents.
