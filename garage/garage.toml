@@ -23,22 +23,22 @@ rpc_bind_addr    = "[::]:3901"
 bootstrap_peers  = []
 
 # ── S3 API (upload / manage objects) ─────────────────────────────────────────
-# Dokploy exposes this port via Traefik with domain storage.procurelens.org.
+# Dokploy exposes this port via Traefik with domain storage.specus.biz.
 # Authenticated via S3 access key + secret key (SigV4 signing).
 [s3_api]
 api_bind_addr = "[::]:3900"
 s3_region     = "garage"
-root_domain   = ".storage.procurelens.org"
+root_domain   = ".storage.specus.biz"
 
 # ── S3 Web Gateway (public CDN) ────────────────────────────────────────────
 # Serves bucket contents over HTTP on port 3902.
-# Dokploy exposes this port via Traefik with domain cdn.procurelens.org.
+# Dokploy exposes this port via Traefik with domain cdn.specus.biz.
 #
 # Bucket resolution: if the Host header matches a global alias
-# (e.g. cdn.procurelens.org → lexicon bucket), Garage serves that bucket.
+# (e.g. cdn.specus.biz → lexicon bucket), Garage serves that bucket.
 [s3_web]
 bind_addr   = "[::]:3902"
-root_domain = ".cdn.procurelens.org"
+root_domain = ".cdn.specus.biz"
 
 # ── Admin API (VPN-only) ───────────────────────────────────────────────────
 # Token is provided via GARAGE_ADMIN_TOKEN env var.

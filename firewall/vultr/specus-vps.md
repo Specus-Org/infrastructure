@@ -7,10 +7,10 @@ Single VPS running all services (PostgreSQL, Redis, Airflow, Garage, Authentik, 
 ```
 Internet ──→ WireGuard UDP 51820 (Public)
            │
-           ├──→ HTTPS 443 (Traefik) ──→ wg-easy UI    (vpn.procurelens.org)
-           │                        ──→ Garage S3 API (storage.procurelens.org)
-           │                        ──→ Garage CDN    (cdn.procurelens.org)
-           │                        ──→ Authentik     (auth.procurelens.org)
+           ├──→ HTTPS 443 (Traefik) ──→ wg-easy UI    (vpn.specus.biz)
+           │                        ──→ Garage S3 API (storage.specus.biz)
+           │                        ──→ Garage CDN    (cdn.specus.biz)
+           │                        ──→ Authentik     (auth.specus.biz)
            │
            ↓ (after VPN connection)
            VPN Network 10.8.0.0/24
@@ -68,9 +68,9 @@ Allow all outbound traffic (default).
 - **SSH is VPN-only**: You must connect to WireGuard VPN before SSH access is available.
 - **Database ports are VPN-only**: PostgreSQL and Redis are never exposed to the public internet.
 - **wg-easy UI port 51821 is VPN-only**: Direct admin interface access requires VPN connection.
-- **wg-easy HTTPS is public**: Optionally, a domain (e.g. vpn.procurelens.org) routes through Traefik on port 443 for HTTPS login. Access is protected by wg-easy's built-in username/password authentication. Use a strong password.
+- **wg-easy HTTPS is public**: Optionally, a domain (e.g. vpn.specus.biz) routes through Traefik on port 443 for HTTPS login. Access is protected by wg-easy's built-in username/password authentication. Use a strong password.
 - **HTTP/HTTPS are public**: Traefik handles TLS termination and routes to internal services.
-- **Garage S3 API (port 3900) is public via Traefik**: Served as `storage.procurelens.org` on port 443. Authenticated via S3 access key + secret key. Direct port 3900 access remains VPN-only.
-- **Garage web gateway (port 3902) is public via Traefik**: Served as `cdn.procurelens.org` on port 443. Read-only public CDN. The Admin API (3903) is VPN-only.
-- **Authentik (port 9000) is public via Traefik**: Served as `auth.procurelens.org` on port 443. Rate-limited (100 req/min). No direct port exposure needed — accessed only through Traefik.
+- **Garage S3 API (port 3900) is public via Traefik**: Served as `storage.specus.biz` on port 443. Authenticated via S3 access key + secret key. Direct port 3900 access remains VPN-only.
+- **Garage web gateway (port 3902) is public via Traefik**: Served as `cdn.specus.biz` on port 443. Read-only public CDN. The Admin API (3903) is VPN-only.
+- **Authentik (port 9000) is public via Traefik**: Served as `auth.specus.biz` on port 443. Rate-limited (100 req/min). No direct port exposure needed — accessed only through Traefik.
 - **Dokploy deployments**: Because port 3000 is VPN-only, Dokploy cannot receive external webhooks (e.g., from GitHub). Configure Dokploy to use **polling-based** deployments, or trigger deploys manually / via SSH over the VPN.
