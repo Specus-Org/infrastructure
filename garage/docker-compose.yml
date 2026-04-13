@@ -2,8 +2,8 @@
 # Specus Garage — S3-Compatible Object Storage + WebUI
 # =============================================================================
 # Deploy as a Dokploy compose service. After deploying:
-#   1. Add domain cdn.procurelens.org   → service: garage,       port: 3902
-#   2. Add domain storage.procurelens.org → service: garage,     port: 3900
+#   1. Add domain cdn.specus.biz   → service: garage,       port: 3902
+#   2. Add domain storage.specus.biz → service: garage,     port: 3900
 #   3. Initialize the cluster (see README § "Garage Setup")
 # =============================================================================
 
@@ -24,11 +24,11 @@ services:
       - garage-meta:/var/lib/garage/meta
       - garage-data:/var/lib/garage/data
     ports:
-      # S3 API — public via Traefik (storage.procurelens.org), VPN-only direct
+      # S3 API — public via Traefik (storage.specus.biz), VPN-only direct
       - "3900:3900"
       # RPC — internal only (cluster communication)
       - "3901:3901"
-      # Web gateway — public via Traefik (cdn.procurelens.org)
+      # Web gateway — public via Traefik (cdn.specus.biz)
       - "3902:3902"
       # Admin API — VPN-only
       - "3903:3903"

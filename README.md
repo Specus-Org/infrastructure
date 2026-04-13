@@ -87,8 +87,8 @@ SELECT extname, extversion FROM pg_extension ORDER BY extname;
 |---------|-------|---------|
 | db_engine | lmdb | Metadata storage engine |
 | replication_factor | 1 | Single-node (no redundancy) |
-| S3 API port | 3900 | Upload/manage objects (storage.procurelens.org) |
-| Web gateway port | 3902 | Public CDN (cdn.procurelens.org) |
+| S3 API port | 3900 | Upload/manage objects (storage.specus.biz) |
+| Web gateway port | 3902 | Public CDN (cdn.specus.biz) |
 | Admin API port | 3903 | Bucket/key management (VPN-only) |
 
 ## Dokploy Deployment
@@ -242,7 +242,7 @@ ghcr.io/<username>/specus-airflow:latest
 
 Go to Actions tab → Select workflow → Run workflow
 
-### 7. Garage Setup (storage.procurelens.org + cdn.procurelens.org)
+### 7. Garage Setup (storage.specus.biz + cdn.specus.biz)
 
 After deploying Garage, configure the bucket, DNS, and Dokploy routing:
 
@@ -276,7 +276,7 @@ garage bucket allow --read --write lexicon --key lexicon-app-key
 garage bucket website --allow lexicon
 
 # Alias the CDN domain to the bucket (web gateway resolves Host header)
-garage bucket alias set --global cdn.procurelens.org lexicon
+garage bucket alias set --global cdn.specus.biz lexicon
 ```
 
 #### c) Cloudflare DNS
@@ -293,12 +293,12 @@ Cloudflare provides SSL termination and caching in front of Traefik.
 In Dokploy, add **two domains** to the Garage service:
 
 **S3 API (for uploads)**:
-- **Domain**: `storage.procurelens.org`
+- **Domain**: `storage.specus.biz`
 - **Container port**: `3900`
 - **HTTPS**: enabled
 
 **Web Gateway (public CDN)**:
-- **Domain**: `cdn.procurelens.org`
+- **Domain**: `cdn.specus.biz`
 - **Container port**: `3902`
 - **HTTPS**: enabled
 
@@ -307,15 +307,15 @@ Dokploy/Traefik will automatically create the routing labels for both.
 #### e) Application .env
 
 ```
-S3_ENDPOINT=https://storage.procurelens.org
+S3_ENDPOINT=https://storage.specus.biz
 S3_REGION=garage
 S3_BUCKET=lexicon
 S3_ACCESS_KEY_ID=<from garage key create>
 S3_SECRET_ACCESS_KEY=<from garage key create>
-S3_PUBLIC_BASE_URL=https://cdn.procurelens.org/lexicon
+S3_PUBLIC_BASE_URL=https://cdn.specus.biz/lexicon
 ```
 
-Public URLs in CMS content: `https://cdn.procurelens.org/lexicon/uploads/image/{uuid}/{file.png}`
+Public URLs in CMS content: `https://cdn.specus.biz/lexicon/uploads/image/{uuid}/{file.png}`
 
 ## Monitoring
 
@@ -374,7 +374,7 @@ Access the web UI at your configured domain or `http://localhost:8080` for local
 3. **Redis requires password** - Protected mode is enabled
 4. **Airflow uses Fernet encryption** - Connections are encrypted at rest
 5. **Garage secrets via env vars** - RPC secret, admin token, and metrics token are never stored in config files
-6. **Garage S3 API is authenticated** - Public via `storage.procurelens.org` but requires S3 access key + secret (SigV4 signing). Web gateway (`cdn.procurelens.org`) is read-only CDN. Admin API (3903) and WebUI (3909) are VPN-only.
+6. **Garage S3 API is authenticated** - Public via `storage.specus.biz` but requires S3 access key + secret (SigV4 signing). Web gateway (`cdn.specus.biz`) is read-only CDN. Admin API (3903) and WebUI (3909) are VPN-only.
 7. **Authentik via Traefik only** - No direct port exposure; rate-limited at 100 req/min via Traefik middleware
 8. **GHCR tokens** - Use minimal permissions for CI/CD
 
