@@ -93,7 +93,7 @@ SELECT extname, extversion FROM pg_extension ORDER BY extname;
 
 ## Dokploy Deployment
 
-> **New to Dokploy?** Start with [`docs/dokploy-guide.md`](docs/dokploy-guide.md) - a first-timer's walkthrough covering what Dokploy is, how to install it, and how to deploy each service in this repo step-by-step. Return here for the per-service specifics.
+> **Onboarding a new VPS?** Start with [`docs/dokploy-first-deploy.md`](docs/dokploy-first-deploy.md) for a full walkthrough from empty host to Authentik live. For day-two operations (redeploy, logs, rollback, troubleshooting), see [`docs/dokploy-operations.md`](docs/dokploy-operations.md). The sections below are a terse per-service reference.
 
 ### 1. Create Services
 
