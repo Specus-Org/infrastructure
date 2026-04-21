@@ -1,0 +1,146 @@
+# Apache Superset BI Stack
+# Web UI + Celery Worker + Celery Beat
+#
+# Prerequisites:
+#   1. Core stack running (PostgreSQL, Redis)
+#   2. Database initialized: run init-superset.sql manually
+#   3. Environment configured: cp .env.example .env && edit
+#   4. Custom image built: ghcr.io/<org>/specus-superset:latest
+#      (built automatically by .github/workflows/build-superset.yml)
+#
+# Usage:
+#   docker-compose --env-file .env up -d
+#
+# First deploy: see bootstrap.md for db upgrade + admin creation steps
+#
+# Access:
+#   UI: https://bi.specus.biz (configure in Dokploy)
+#   Internal: http://superset-web:8088
+
+x-superset-env: &superset-env
+  # Core
+  SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+
+  # Metadata database (uses core stack)
+  SUPERSET_DB_HOST: ${SUPERSET_DB_HOST:-specus-production-database-rkpsij}
+  SUPERSET_DB_PORT: ${SUPERSET_DB_PORT:-5432}
+  SUPERSET_DB_NAME: ${SUPERSET_DB_NAME:-superset}
+  SUPERSET_DB_USER: ${SUPERSET_DB_USER:-superset_user}
+  SUPERSET_DB_PASSWORD: ${SUPERSET_DB_PASSWORD}
+
+  # Redis (uses core stack)
+  REDIS_HOST: ${REDIS_HOST:-specus-production-redis-h08jhy}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
+  SUPERSET_CACHE_REDIS_DB: ${SUPERSET_CACHE_REDIS_DB:-2}
+  SUPERSET_CELERY_BROKER_DB: ${SUPERSET_CELERY_BROKER_DB:-3}
+  SUPERSET_CELERY_RESULT_DB: ${SUPERSET_CELERY_RESULT_DB:-4}
+
+  # Internal webdriver URL (worker → web for thumbnails)
+  SUPERSET_WEBDRIVER_BASEURL: http://superset-web:8088/
+  SUPERSET_DOMAIN_URL: https://${SUPERSET_DOMAIN:-bi.specus.biz}/
+
+services:
+  superset-web:
+    image: ghcr.io/${GITHUB_ORG:-specus-org}/specus-superset:${SUPERSET_VERSION:-latest}
+    container_name: specus-superset-web
+    hostname: superset-web
+    command: ["/usr/bin/run-server.sh"]
+    restart: unless-stopped
+    environment:
+      <<: *superset-env
+    networks:
+      - superset-internal
+      - dokploy-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    volumes:
+      - superset-home:/app/superset_home
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+  superset-worker:
+    image: ghcr.io/${GITHUB_ORG:-specus-org}/specus-superset:${SUPERSET_VERSION:-latest}
+    container_name: specus-superset-worker
+    hostname: superset-worker
+    command:
+      - celery
+      - --app=superset.tasks.celery_app:app
+      - worker
+      - --loglevel=info
+      - --concurrency=2
+    restart: unless-stopped
+    environment:
+      <<: *superset-env
+    networks:
+      - superset-internal
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "celery --app=superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME || exit 1"
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - superset-home:/app/superset_home
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  superset-beat:
+    image: ghcr.io/${GITHUB_ORG:-specus-org}/specus-superset:${SUPERSET_VERSION:-latest}
+    container_name: specus-superset-beat
+    hostname: superset-beat
+    command:
+      - celery
+      - --app=superset.tasks.celery_app:app
+      - beat
+      - --loglevel=info
+      - --schedule=/app/superset_home/celerybeat-schedule
+    restart: unless-stopped
+    environment:
+      <<: *superset-env
+    networks:
+      - superset-internal
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /app/superset_home/celerybeat-schedule || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - superset-home:/app/superset_home
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+volumes:
+  superset-home:
+    driver: local
+
+networks:
+  superset-internal:
+    driver: bridge
+  dokploy-network:
+    external: true

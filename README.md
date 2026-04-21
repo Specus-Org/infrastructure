@@ -12,6 +12,7 @@ Custom Docker images for the Specus platform, deployable to Dokploy as individua
 | Garage | dxflrs/garage:v2.2.0 | S3-compatible object storage & CDN |
 | Garage WebUI | khairul169/garage-webui:latest | Admin UI for Garage |
 | Authentik | ghcr.io/goauthentik/server | Identity provider & SSO |
+| Apache Superset 4.1 | apache/superset:4.1.2 | Business intelligence & ad-hoc SQL |
 
 ## Quick Start
 
@@ -81,6 +82,18 @@ SELECT extname, extversion FROM pg_extension ORDER BY extname;
 | save | "" | No persistence |
 | appendonly | no | No AOF |
 
+### Redis DB Allocation
+
+| DB | Owner | Purpose |
+|----|-------|---------|
+| 0 | (default) | Unused — reserved |
+| 1 | Authentik | Session cache + task broker |
+| 2 | Superset | Results, filter state, explore form data cache |
+| 3 | Superset | Celery task broker |
+| 4 | Superset | Celery results backend |
+
+> When adding a new service that needs Redis, claim the next free DB number and record it here.
+
 ### Garage (S3 object storage + CDN)
 
 | Setting | Value | Purpose |
@@ -104,6 +117,7 @@ Create each service in Dokploy as a Docker image deployment:
 - **specus-airflow-triggerer**: `ghcr.io/<username>/specus-airflow:latest`
 - **specus-garage**: Deploy `garage/docker-compose.yml` as a Dokploy compose service (includes Garage + WebUI)
 - **specus-authentik**: Deploy `authentik/docker-compose.yml` as a Dokploy compose service (server + worker)
+- **specus-superset**: Deploy `superset/docker-compose.yml` as a Dokploy compose service (web + worker + beat)
 
 ### 2. Network Configuration
 
@@ -166,6 +180,19 @@ AUTHENTIK_DB_PASSWORD=<openssl rand -base64 32>
 REDIS_PASSWORD=<same as core stack>
 ```
 
+#### Superset (via compose `.env`)
+
+Copy `superset/.env.example` to `superset/.env` and fill in values. See `superset/init-superset.sql`
+for database setup and `superset/bootstrap.md` for the first-deploy runbook.
+
+```
+SUPERSET_SECRET_KEY=<openssl rand -base64 42>
+SUPERSET_DB_PASSWORD=<openssl rand -base64 32>
+SUPERSET_ADMIN_PASSWORD=<openssl rand -base64 32>
+REDIS_PASSWORD=<same as core stack>
+GITHUB_ORG=<your-github-org>
+```
+
 #### Airflow Scheduler
 
 Same environment as API server, with command override: `scheduler`
@@ -204,6 +231,11 @@ Start services in order:
 6. Airflow Scheduler
 7. Airflow Triggerer
 8. Airflow API Server
+9. Authentik Worker
+10. Authentik Server
+11. Superset Worker
+12. Superset Beat
+13. Superset Web (runs `superset db upgrade` + `superset init` on first start — see `superset/bootstrap.md`)
 
 ### 6. Resource Allocation
 
@@ -218,7 +250,10 @@ Start services in order:
 | Garage WebUI | 128MB | 0.25 |
 | Authentik Server | 2GB | 2 |
 | Authentik Worker | 1GB | 1 |
-| **Total** | **~6.7GB** | **6.0** |
+| Superset Web | 1GB | 0.5 |
+| Superset Worker | 1GB | 0.5 |
+| Superset Beat | 256MB | 0.25 |
+| **Total** | **~9.0GB** | **7.25** |
 
 > Airflow parallelism is capped at 8 concurrent tasks to prevent OOM.
 > All services have memory limits enforced in docker-compose to prevent OOM cascades.
@@ -236,6 +271,7 @@ Images are automatically built and pushed to GitHub Container Registry on:
 ghcr.io/<username>/specus-postgres:17
 ghcr.io/<username>/specus-redis:7
 ghcr.io/<username>/specus-airflow:latest
+ghcr.io/<username>/specus-superset:latest
 ```
 
 ### Manual Build Trigger
@@ -377,6 +413,7 @@ Access the web UI at your configured domain or `http://localhost:8080` for local
 6. **Garage S3 API is authenticated** - Public via `storage.specus.biz` but requires S3 access key + secret (SigV4 signing). Web gateway (`cdn.specus.biz`) is read-only CDN. Admin API (3903) and WebUI (3909) are VPN-only.
 7. **Authentik via Traefik only** - No direct port exposure; rate-limited at 100 req/min via Traefik middleware
 8. **GHCR tokens** - Use minimal permissions for CI/CD
+9. **Superset uses local DB auth** - Admin credentials managed in Superset's own metadata DB. Authentik SSO is a planned follow-up. Only the web container is exposed to `dokploy-network`; worker and beat are internal-only.
 
 ## Directory Structure
 
@@ -409,6 +446,14 @@ infrastructure/
 │   ├── .env.example              # All Authentik config
 │   ├── init-authentik.sql        # Database initialization
 │   └── traefik-config.example.yml # Traefik reference
+├── superset/
+│   ├── Dockerfile                # FROM apache/superset + bundled config
+│   ├── requirements.txt          # Extra Python deps (empty in this iteration)
+│   ├── superset_config.py        # Metadata DB, Celery, cache, auth config
+│   ├── docker-compose.yml        # Web + Worker + Beat (Dokploy compose)
+│   ├── init-superset.sql         # Manual DB + role bootstrap
+│   ├── .env.example              # All Superset secrets and config
+│   └── bootstrap.md              # First-deploy runbook
 └── README.md
 ```
 
