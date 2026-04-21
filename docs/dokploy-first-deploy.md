@@ -1,87 +1,22 @@
 # Dokploy First Deploy
 
-How to bring up the Specus infrastructure stack on a fresh VPS using Dokploy.
+How to deploy the Specus infrastructure stack once you have a Dokploy admin account and can log in to the UI.
 
 ## Audience
 
-This guide is written for an engineer who is comfortable with Docker, SSH, and DNS, but has not used Dokploy before. If you have never used Docker or provisioned a VPS, the [official Dokploy getting-started docs](https://docs.dokploy.com) cover that ground better.
+This guide is written for an engineer who is comfortable with Docker, SSH, and DNS. It assumes Dokploy is already installed on a VPS and you have admin access to the Dokploy UI. If Dokploy is not yet installed, see the [official Dokploy install docs](https://docs.dokploy.com).
 
 For day-two operations (redeploy, logs, rollback, troubleshooting), see [`dokploy-operations.md`](dokploy-operations.md).
 
-## When to use Dokploy
-
-Dokploy is a self-hosted UI layer on top of Docker and Traefik. It handles image builds from Git, per-service environment variables, TLS via Let's Encrypt, and live logs. It is a good fit when you want:
-
-- A single-VPS or small-cluster deployment, not a full Kubernetes setup
-- UI-driven deploys instead of writing your own CI pipelines
-- Automatic TLS and reverse-proxy routing from a domain to a container
-
-It is not a fit if you need multi-region, managed databases, or strict GitOps (where the repo is the source of truth for what is deployed). With Dokploy, environment variables and domain routing live in the UI, not in Git.
-
 ## What you need before starting
 
-1. A Linux VPS, Ubuntu 22.04 or 24.04, at least 8 GB RAM and 40 GB disk. Hetzner, DigitalOcean, Vultr, and Linode all work.
-2. SSH key authentication configured before you touch the VPS. Password auth over SSH is out of scope, we assume key-only.
-3. A cloud firewall you can configure before installing anything. Vultr, DigitalOcean, and Hetzner all expose this in their control panel. We use this to restrict port 3000 to your IP during Dokploy setup. An example ruleset lives at `firewall/vultr/specus-vps.md`.
-4. A domain with DNS you control. This guide assumes Cloudflare, matching the existing setup.
-5. A GitHub account with read access to `Specus-Org/infrastructure`.
+1. Dokploy admin credentials and a reachable URL for the UI.
+2. SSH access to the VPS running Dokploy (needed for discovering generated container hostnames and for running the Authentik DB bootstrap). The repo is expected to be cloned somewhere on that host, for example `/opt/specus`.
+3. DNS you control for the domains you will use. This guide assumes Cloudflare.
+4. The Dokploy GitHub App installed against `Specus-Org/infrastructure`. If that is not set up yet: in Dokploy, **Settings → Git → GitHub → Install GitHub App**, then grant access to the repo.
+5. Let's Encrypt email set in Dokploy. In **Settings** there is a field for the email used for ACME registration. Dokploy does not issue any certs until this is set, and it does not warn you loudly that this is the reason.
 
-## Step 1: Lock down the VPS before Dokploy goes on it
-
-Apply these restrictions in your cloud provider's firewall, from your provider's UI, before running any install commands:
-
-- Allow SSH (TCP 22) only from your own IP
-- Allow Dokploy UI (TCP 3000) only from your own IP
-- Allow HTTP (TCP 80) and HTTPS (TCP 443) from anywhere (Let's Encrypt needs port 80 to reach Traefik during cert issuance)
-- Block everything else inbound
-
-The reason this happens first is that Dokploy's UI opens on port 3000 as soon as the installer finishes. If the firewall is not in place, anyone on the internet can reach the admin signup page during the setup window.
-
-SSH to the VPS and run:
-
-```bash
-sudo apt update && sudo apt upgrade -y
-```
-
-Then reboot if a new kernel was installed.
-
-## Step 2: Install Dokploy
-
-As root on the VPS:
-
-```bash
-curl -sSL https://dokploy.com/install.sh | sh
-```
-
-The installer does three things: it installs Docker if missing, initializes Docker Swarm mode, and starts Dokploy and Traefik on the host. It binds ports 80, 443, and 3000.
-
-If the installer complains about an existing Docker installation or an existing Swarm node, stop and clean up before continuing. The installer is not designed to merge into an existing Docker setup.
-
-When it finishes, open `http://<your-vps-ip>:3000` in your browser and create the admin account. Dokploy admin access is equivalent to root on the host (anyone with Docker access can read every container's environment variables, mount host paths, or escape to the host). Treat this account like a root password.
-
-## Step 3: Run the repo hardening scripts
-
-Clone the repo on the VPS and run the hardening scripts that handle the rest of the host setup (swap, timezone, `unattended-upgrades`, fail2ban, SSH hardening):
-
-```bash
-cd /opt
-sudo git clone https://github.com/Specus-Org/infrastructure.git specus
-cd specus/scripts
-sudo ./setup-vps.sh
-sudo ./harden-ssh.sh
-```
-
-`setup-vps.sh` also deploys `wg-easy` so you can reach the VPN-only services (Postgres, Redis, Airflow UI) later without exposing them through Traefik. Once the VPN is up, tighten your cloud firewall to only allow port 3000 from inside the VPN.
-
-## Step 4: Configure Let's Encrypt in Dokploy
-
-In the Dokploy UI, open **Settings** and set the Let's Encrypt email address. Dokploy will not issue any certs until this is set, and it does not warn you loudly that this is the reason. Do this before you deploy any service with a public domain.
-
-## Step 5: Connect GitHub
-
-**Settings → Git → GitHub → Install GitHub App**. Grant access to `Specus-Org/infrastructure`. Dokploy uses this to pull code during deploys.
-
-## Step 6: Understand the service map
+## Step 1: Understand the service map
 
 Before you deploy anything, internalize the dependency order. Services later in this list need services earlier in this list already running and healthy:
 
@@ -93,7 +28,7 @@ Before you deploy anything, internalize the dependency order. Services later in 
 
 Each of these is a separate Dokploy service. Do not deploy them all at once. Deploy and verify one, then move to the next.
 
-## Step 7: Deploy Postgres first
+## Step 2: Deploy Postgres first
 
 In Dokploy, create a new project called `Infrastructure`, environment `production`. Inside it:
 
@@ -110,7 +45,7 @@ In the **Environment** tab, paste the contents of `postgres/.env.example` with r
 
 Click **Deploy**. Watch the Deployments tab until the build finishes and the container reports healthy. Note the generated container name from the **General** tab (something like `specus-production-database-a7k2m9`). This suffix is unique to your installation and will be important in the next step.
 
-## Step 8: Discover your actual generated hostnames
+## Step 3: Discover your actual generated hostnames
 
 The `.env.example` files in the repo default their host values to hostnames from the original Specus deployment (for example `POSTGRES_HOST=specus-production-database-rkpsij`). Your installation's suffixes will be different. Before deploying any service that depends on Postgres or Redis, you need to know your actual generated hostnames.
 
@@ -124,7 +59,7 @@ docker network inspect dokploy-network \
 
 Note down the hostname for each core service. You will paste these into the env vars of every consumer service.
 
-## Step 9: Deploy Redis
+## Step 4: Deploy Redis
 
 Same shape as Postgres:
 
@@ -134,20 +69,18 @@ Same shape as Postgres:
 
 Click Deploy. Wait for healthy. No domain needed (Redis is internal-only, reached via the Docker network).
 
-## Step 10: Initialize the Authentik database (required before deploying Authentik)
+## Step 5: Initialize the Authentik database (required before deploying Authentik)
 
 This is a hard gate. If you skip it, Authentik will crash-loop on startup with `FATAL: role "authentik_user" does not exist` and Dokploy's retry counter will burn through attempts. Run the SQL before clicking Deploy on Authentik.
 
-From the VPS shell:
+Open `authentik/init-authentik.sql` on the VPS and edit `CHANGE_ME_SECURE_PASSWORD` to the value you plan to use for `AUTHENTIK_DB_PASSWORD`. The script has two SQL blocks. The first block (against the `postgres` database) creates the database and role. The second block (against the `authentik` database) only matters if your `authentik_user` did not end up as owner, which is rare on a clean install. Read the comments in the file before running.
+
+Run the first block:
 
 ```bash
-cd /opt/specus
-# First block of init-authentik.sql runs against 'postgres' database
 docker exec -i specus-production-database-<your-suffix> \
   psql -U postgres -d postgres < authentik/init-authentik.sql
 ```
-
-Open `authentik/init-authentik.sql` first and edit `CHANGE_ME_SECURE_PASSWORD` to the value you plan to use for `AUTHENTIK_DB_PASSWORD`. The script has two SQL blocks (one for the `postgres` database, one for the `authentik` database). The second block only matters if your `authentik_user` did not end up as owner, which is rare on a clean install. Read the comments in the file before running.
 
 Confirm the bootstrap worked:
 
@@ -158,7 +91,7 @@ docker exec specus-production-database-<your-suffix> \
 
 If this returns `1`, you are ready to deploy Authentik.
 
-## Step 11: Deploy Authentik
+## Step 6: Deploy Authentik
 
 **+ Service → Compose** (not Application, this time, because Authentik has two containers):
 
@@ -170,13 +103,13 @@ If this returns `1`, you are ready to deploy Authentik.
 
 In the **Environment** tab, paste the contents of `authentik/.env.example` with real values. The important ones to set for your specific installation:
 
-- `POSTGRES_HOST` must match your Postgres container name from Step 8 (override the default, which is from the original Specus deploy)
-- `REDIS_HOST` must match your Redis container name from Step 8
+- `POSTGRES_HOST` must match your Postgres container name from Step 3 (override the default, which is from the original Specus deploy)
+- `REDIS_HOST` must match your Redis container name from Step 3
 - `AUTHENTIK_SECRET_KEY`, `AUTHENTIK_DB_PASSWORD`, `AUTHENTIK_BOOTSTRAP_PASSWORD` all get real generated values
 
 Memory limits for compose services have to live in the compose file, not the Dokploy UI (the UI's `Advanced → Cluster Settings` only applies to Application services, not Compose services). The limits in `authentik/docker-compose.yml` are already sized for an 8 GB host.
 
-## Step 12: Add the domain and DNS carefully
+## Step 7: Add the domain and DNS carefully
 
 This is where the Let's Encrypt plus Cloudflare pitfall lives. Follow this sequence:
 
@@ -194,7 +127,7 @@ This is where the Let's Encrypt plus Cloudflare pitfall lives. Follow this seque
 
 The reason for this dance: Dokploy's Traefik uses Let's Encrypt's HTTP-01 challenge by default, which needs unproxied port 80 traffic. With Cloudflare proxying enabled from the start, the challenge fails silently, Traefik retries, and after five failures per hostname per hour Let's Encrypt rate-limits you for up to a week. If you want Cloudflare proxying from the start, switch Traefik to the DNS-01 challenge with a Cloudflare API token (outside the scope of this guide).
 
-## Step 13: First login and remove bootstrap credentials
+## Step 8: First login and remove bootstrap credentials
 
 Open `https://auth.specus.biz` and log in with `akadmin@specus.biz` and the value of `AUTHENTIK_BOOTSTRAP_PASSWORD` you set. Immediately do these:
 
@@ -205,7 +138,7 @@ The Authentik admin credential is the master for all services that delegate SSO 
 
 ## Where to back up your secrets
 
-Dokploy stores environment variables encrypted at rest, but that encryption does not help you if the VPS or Dokploy database is lost. Keep your source of truth somewhere else (1Password, Bitwarden, Vault, an age-encrypted file in a separate repo, whatever your team uses). Rotating `AUTHENTIK_SECRET_KEY` or Authentik's Fernet key without coordinating with stored database credentials is destructive, so this source of truth is load-bearing.
+Dokploy stores environment variables encrypted at rest, but that encryption does not help you if the VPS or Dokploy database is lost. Keep your source of truth somewhere else (1Password, Bitwarden, Vault, an age-encrypted file in a separate repo, whatever your team uses). Rotating `AUTHENTIK_SECRET_KEY` without coordinating with the Fernet-encrypted data it protects is destructive, so this source of truth is load-bearing.
 
 ## What's next
 
