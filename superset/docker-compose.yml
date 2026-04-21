@@ -14,7 +14,7 @@
 # First deploy: see bootstrap.md for db upgrade + admin creation steps
 #
 # Access:
-#   UI: https://bi.specus.biz (configure in Dokploy)
+#   UI: https://superset.specus.biz (configure in Dokploy)
 #   Internal: http://superset-web:8088
 
 x-superset-env: &superset-env
@@ -38,7 +38,7 @@ x-superset-env: &superset-env
 
   # Internal webdriver URL (worker → web for thumbnails)
   SUPERSET_WEBDRIVER_BASEURL: http://superset-web:8088/
-  SUPERSET_DOMAIN_URL: https://${SUPERSET_DOMAIN:-bi.specus.biz}/
+  SUPERSET_DOMAIN_URL: https://${SUPERSET_DOMAIN:-superset.specus.biz}/
 
 services:
   superset-web:

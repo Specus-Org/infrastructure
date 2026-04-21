@@ -78,7 +78,7 @@ docker exec specus-superset-web superset init
 
 ## Step 6: Register the specus Postgres data source
 
-1. Log in to `https://bi.specus.biz` with the admin credentials.
+1. Log in to `https://superset.specus.biz` with the admin credentials.
 2. Navigate to **Settings → Database Connections → + Database**.
 3. Select **PostgreSQL**.
 4. Enter the SQLAlchemy URI:
@@ -103,7 +103,7 @@ docker exec specus-superset-web superset init
 
 In Dokploy, add a domain to the Superset **compose service**:
 
-- **Domain**: `bi.specus.biz`
+- **Domain**: `superset.specus.biz`
 - **Service/container**: `superset-web`
 - **Container port**: `8088`
 - **HTTPS**: enabled

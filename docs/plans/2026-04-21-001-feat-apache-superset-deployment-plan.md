@@ -17,13 +17,13 @@ The platform needs a self-hosted BI/exploration tool so the team can build dashb
 
 - Deploy through Dokploy like every other service in this repo
 - Share the existing PostgreSQL (`specus-production-database-rkpsij`) and Redis (`specus-production-redis-h08jhy`) core stacks rather than spinning up dedicated instances
-- Live under `specus.biz` (e.g. `bi.specus.biz`) behind Traefik with HTTPS
+- Live under `specus.biz` (e.g. `superset.specus.biz`) behind Traefik with HTTPS
 - Build an image in CI and publish to GHCR alongside `specus-postgres`, `specus-redis`, `specus-airflow`
 - Not disrupt the running Authentik/Airflow stacks or their Redis/Postgres usage
 
 ## Requirements Trace
 
-- R1. Superset web UI is reachable at `bi.specus.biz` over HTTPS and lets a bootstrapped admin log in.
+- R1. Superset web UI is reachable at `superset.specus.biz` over HTTPS and lets a bootstrapped admin log in.
 - R2. Superset metadata persists in a dedicated database on the shared Postgres instance (`superset` DB, `superset_user` role), isolated from other services.
 - R3. Celery worker and beat run as separate containers using the shared Redis as broker + result backend + cache, on Redis DBs that do not collide with Authentik (DB 1).
 - R4. SQL Lab async queries, alerts/reports, and scheduled dashboard caching are functional (validated by a smoke query through SQL Lab and a scheduled cache warm-up).
@@ -96,7 +96,7 @@ The platform needs a self-hosted BI/exploration tool so the team can build dashb
 - Exact pinned Superset image tag — verify latest stable at build time.
 - Whether to keep `requirements.txt` empty initially or preinstall `pydruid`/connector extras we already expect — decide when the Dockerfile is written.
 - Precise memory caps after observing real usage (the values in Key Decisions are starting points, not final).
-- Concrete domain routing (Dokploy domain entry + Cloudflare DNS for `bi.specus.biz`) — configured in Dokploy as a deploy-time step, not in the repo.
+- Concrete domain routing (Dokploy domain entry + Cloudflare DNS for `superset.specus.biz`) — configured in Dokploy as a deploy-time step, not in the repo.
 
 ## Output Structure
 
@@ -260,7 +260,7 @@ superset/
 **Approach:**
 - Sections, in order: Core (secret key, pinned version, domain), Bootstrap admin (username, password, first/last name, email), Database (shared Postgres host/port + `SUPERSET_DB_*`), Redis (shared host/port + cache/broker/results DB numbers + password), Feature flags (optional overrides), Generation commands (footer).
 - Every secret has an `# openssl rand ...` or `# python -c ...` comment above it, matching `authentik/.env.example`.
-- Pre-fill non-secret defaults (`POSTGRES_HOST=specus-production-database-rkpsij`, `REDIS_HOST=specus-production-redis-h08jhy`, `SUPERSET_CACHE_REDIS_DB=2`, `SUPERSET_CELERY_BROKER_DB=3`, `SUPERSET_CELERY_RESULT_DB=4`, `SUPERSET_DOMAIN=bi.specus.biz`).
+- Pre-fill non-secret defaults (`POSTGRES_HOST=specus-production-database-rkpsij`, `REDIS_HOST=specus-production-redis-h08jhy`, `SUPERSET_CACHE_REDIS_DB=2`, `SUPERSET_CELERY_BROKER_DB=3`, `SUPERSET_CELERY_RESULT_DB=4`, `SUPERSET_DOMAIN=superset.specus.biz`).
 - A top-of-file banner: "DO NOT commit .env; usage: `docker-compose --env-file .env up -d`".
 
 **Patterns to follow:**
@@ -294,7 +294,7 @@ superset/
   6. Init roles/permissions: `docker exec specus-superset-web superset init`.
   7. Register the `specus` Postgres connection: navigate to Data → Databases → `+ Database`, paste the SQLAlchemy URI (pointed at a read-only role on the shared Postgres — operator owns creating that role in this step).
   8. Smoke test: run a SELECT through SQL Lab in async mode and verify it returns.
-  9. Dokploy / Cloudflare: add `bi.specus.biz` → container `:8088` domain in Dokploy; add Cloudflare A record (proxied) per the Garage/Authentik precedent.
+  9. Dokploy / Cloudflare: add `superset.specus.biz` → container `:8088` domain in Dokploy; add Cloudflare A record (proxied) per the Garage/Authentik precedent.
 - Callouts for things that can only be done once (`fab create-admin`) vs. safe to re-run (`superset db upgrade`, `superset init`).
 
 **Patterns to follow:**
@@ -372,7 +372,7 @@ superset/
 
 ## System-Wide Impact
 
-- **Interaction graph:** Superset web talks to shared Postgres (new DB), shared Redis (new DBs 2/3/4), Celery worker, Celery beat. None of Authentik, Airflow, or Garage change behavior. Traefik gains one new route (`bi.specus.biz` → `specus-superset-web:8088`).
+- **Interaction graph:** Superset web talks to shared Postgres (new DB), shared Redis (new DBs 2/3/4), Celery worker, Celery beat. None of Authentik, Airflow, or Garage change behavior. Traefik gains one new route (`superset.specus.biz` → `specus-superset-web:8088`).
 - **Error propagation:** A failed metadata-DB connection keeps the web container un-healthy, so Traefik does not route traffic to it — no user-visible 500s, just a deploy that does not come up. Worker/beat failures degrade async features (alerts, SQL Lab async, thumbnails) but do not break the web UI for sync queries.
 - **State lifecycle risks:** Metadata DB bootstrap is manual and one-shot — running `init-superset.sql` twice fails loudly (desired). `superset db upgrade` is re-entrant. `fab create-admin` is not — running it twice with different values creates two admins (documented in the runbook).
 - **API surface parity:** None — Superset introduces a new surface; it does not mirror an existing one.
@@ -393,7 +393,7 @@ superset/
 
 - New `superset/bootstrap.md` is the single source for deploy-day steps; README only references it.
 - Redis DB allocation table in README becomes the shared contract for future services — enforce that new services declare their DB there.
-- Cloudflare + Dokploy domain steps for `bi.specus.biz` are captured in the runbook (Unit 6), not the repo, to stay consistent with how Garage and Authentik handle routing.
+- Cloudflare + Dokploy domain steps for `superset.specus.biz` are captured in the runbook (Unit 6), not the repo, to stay consistent with how Garage and Authentik handle routing.
 - Post-rollout, observe Postgres connection count and Redis memory for one week; record findings in `docs/solutions/` if either constraint bites, so the Authentik-SSO follow-up plan can account for it.
 
 ## Sources & References

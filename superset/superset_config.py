@@ -140,7 +140,7 @@ FEATURE_FLAGS = {
 # superset-internal Docker network, not through Traefik.
 WEBDRIVER_BASEURL = os.environ.get("SUPERSET_WEBDRIVER_BASEURL", "http://superset-web:8088/")
 WEBDRIVER_BASEURL_USER_FRIENDLY = os.environ.get(
-    "SUPERSET_DOMAIN_URL", "https://bi.specus.biz/"
+    "SUPERSET_DOMAIN_URL", "https://superset.specus.biz/"
 )
 
 # =============================================================================
