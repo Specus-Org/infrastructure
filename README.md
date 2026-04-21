@@ -63,22 +63,22 @@ SELECT extname, extversion FROM pg_extension ORDER BY extname;
 
 ## Configuration
 
-### PostgreSQL (4GB RAM optimized)
+### PostgreSQL (Tier 1 / 8 GB host, 1.5 GB container cap)
 
 | Setting | Value | Purpose |
 |---------|-------|---------|
 | shared_buffers | 1GB | Data caching |
 | effective_cache_size | 2GB | Planner hint |
 | work_mem | 4MB | Per-operation memory |
-| max_connections | 50 | Connection limit |
+| max_connections | 75 | Shared across Airflow + Authentik + Superset |
 | log_min_duration_statement | 1000ms | Slow query logging |
 
-### Redis (Cache mode)
+### Redis (Cache mode, Tier 1)
 
 | Setting | Value | Purpose |
 |---------|-------|---------|
-| maxmemory | 256mb | Memory limit |
-| maxmemory-policy | allkeys-lru | LRU eviction |
+| maxmemory | 512mb | Shared across Authentik + Superset namespaces |
+| maxmemory-policy | allkeys-lru | LRU eviction (global across DB numbers) |
 | save | "" | No persistence |
 | appendonly | no | No AOF |
 
@@ -240,23 +240,31 @@ Start services in order:
 
 ### 6. Resource Allocation
 
+Tier 1 budget (8 GB VPS). Revisit when moving to a larger host — see `docs/plans/` for the Tier 2 target.
+
 | Service | Memory Limit | CPU |
 |---------|-------------|-----|
 | PostgreSQL | 1.5GB | 1 |
-| Redis | 300MB | 0.25 |
-| Airflow API Server | 768MB | 0.5 |
+| Redis | 640MB | 0.25 |
+| Airflow API Server | 512MB | 0.5 |
 | Airflow Scheduler | 512MB | 0.5 |
-| Airflow Triggerer | 256MB | 0.25 |
+| Airflow Triggerer | 192MB | 0.25 |
 | Garage | 256MB | 0.25 |
-| Garage WebUI | 128MB | 0.25 |
-| Authentik Server | 2GB | 2 |
-| Authentik Worker | 1GB | 1 |
-| Superset Web | 1GB | 0.5 |
-| Superset Worker | 1GB | 0.5 |
-| Superset Beat | 512MB | 0.25 |
-| **Total** | **~9.25GB** | **7.25** |
+| Garage WebUI | 96MB | 0.25 |
+| Authentik Server | 1GB | 1 |
+| Authentik Worker | 512MB | 0.5 |
+| Superset Web | 768MB | 0.5 |
+| Superset Worker | 640MB | 0.5 |
+| Superset Beat | 256MB | 0.25 |
+| **Container sum** | **~6.9GB** | **~5.75** |
+| Host overhead (OS + Docker + Dokploy + Traefik + WireGuard) | ~1GB | — |
+| **Total** | **~7.9GB** | |
 
 > Airflow parallelism is capped at 8 concurrent tasks to prevent OOM.
+> Superset runs with `SERVER_WORKER_AMOUNT=2` and worker `--concurrency=1` to fit
+> the shared Postgres connection budget (`max_connections=75`). Raise both when
+> the VPS moves to Tier 2 (10 GB, `max_connections=120`).
+> Redis `maxmemory=512mb` is shared across Authentik (DB 1) + Superset (DBs 2-4).
 > All services have memory limits enforced in docker-compose to prevent OOM cascades.
 
 ## CI/CD

@@ -88,8 +88,9 @@ services:
     environment:
       <<: *superset-core-env
       # Cap Gunicorn workers so the shared Postgres connection budget isn't
-      # exhausted (see superset_config.py pool sizing comment).
-      SERVER_WORKER_AMOUNT: ${SUPERSET_WEB_WORKERS:-4}
+      # exhausted (see superset_config.py pool sizing comment). On an 8 GB host,
+      # 2 workers × (pool 3 + overflow 3) = 12 conns is the safe ceiling.
+      SERVER_WORKER_AMOUNT: ${SUPERSET_WEB_WORKERS:-2}
     depends_on:
       superset-init:
         condition: service_completed_successfully
@@ -109,10 +110,10 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 1G
+          memory: 768M
         reservations:
           cpus: '0.25'
-          memory: 512M
+          memory: 384M
 
   superset-worker:
     <<: *superset-image
@@ -123,7 +124,7 @@ services:
       - --app=superset.tasks.celery_app:app
       - worker
       - --loglevel=info
-      - --concurrency=2
+      - --concurrency=1
     restart: unless-stopped
     environment:
       <<: *superset-core-env
@@ -149,7 +150,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 1G
+          memory: 640M
         reservations:
           cpus: '0.25'
           memory: 256M
@@ -196,7 +197,7 @@ services:
       resources:
         limits:
           cpus: '0.25'
-          memory: 512M
+          memory: 256M
         reservations:
           cpus: '0.1'
           memory: 128M

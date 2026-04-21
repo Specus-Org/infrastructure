@@ -36,10 +36,14 @@ SQLALCHEMY_DATABASE_URI = (
     f"postgresql+psycopg2://{_db_user}:{_db_pass}@{_db_host}:{_db_port}/{_db_name}"
 )
 
-# Pool sized assuming SERVER_WORKER_AMOUNT=4 in compose: 4 × (pool+overflow) = 24
-# metadata DB conns per web container, plus 1 worker × (pool+overflow) = 6. Total
-# stays under the shared-Postgres budget (max_connections=50) with headroom for
-# Airflow + Authentik. Bump only if Postgres max_connections is raised globally.
+# Pool sized assuming SERVER_WORKER_AMOUNT=2 (Tier 1 / 8 GB host):
+#   Web:    2 Gunicorn workers × (pool 3 + overflow 3) = 12 conns
+#   Worker: 1 Celery process × (pool 3 + overflow 3)   =  6 conns
+#   Beat:   1 process × (pool 3 + overflow 3)          =  6 conns
+#   Init:   short-lived (only during deploy)           = ~2 conns
+# Total ~26 conns from Superset → fits inside Postgres max_connections=75
+# alongside Airflow (~15) + Authentik (~10) with headroom. Raise proportionally
+# if the VPS moves to Tier 2 and max_connections goes to 120.
 SQLALCHEMY_POOL_SIZE = 3
 SQLALCHEMY_MAX_OVERFLOW = 3
 SQLALCHEMY_POOL_TIMEOUT = 30
