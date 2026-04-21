@@ -93,6 +93,8 @@ SELECT extname, extversion FROM pg_extension ORDER BY extname;
 
 ## Dokploy Deployment
 
+> **New to Dokploy?** Start with [`docs/dokploy-guide.md`](docs/dokploy-guide.md) - a first-timer's walkthrough covering what Dokploy is, how to install it, and how to deploy each service in this repo step-by-step. Return here for the per-service specifics.
+
 ### 1. Create Services
 
 Create each service in Dokploy as a Docker image deployment:
@@ -288,7 +290,7 @@ garage bucket alias set --global cdn.specus.biz lexicon
 
 Cloudflare provides SSL termination and caching in front of Traefik.
 
-#### d) Dokploy service — expose S3 API and web gateway
+#### d) Dokploy service - expose S3 API and web gateway
 
 In Dokploy, add **two domains** to the Garage service:
 
