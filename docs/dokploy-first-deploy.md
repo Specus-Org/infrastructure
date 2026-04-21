@@ -1,147 +1,140 @@
-# Dokploy First Deploy
+# Deploying Your Service on Specus
 
-How to deploy the Specus infrastructure stack once you have a Dokploy admin account and can log in to the UI.
+How to deploy a new application onto the Specus infrastructure using Dokploy.
 
 ## Audience
 
-This guide is written for an engineer who is comfortable with Docker, SSH, and DNS. It assumes Dokploy is already installed on a VPS and you have admin access to the Dokploy UI. If Dokploy is not yet installed, see the [official Dokploy install docs](https://docs.dokploy.com).
+You are a developer who has an application to deploy, and the Specus infrastructure team has given you a Dokploy account on their instance. The shared platform services (PostgreSQL, Redis, Garage object storage, Authentik SSO, Airflow) are already running. This guide shows how to wire your application to those services, add a public domain, and operate the result.
 
-For day-two operations (redeploy, logs, rollback, troubleshooting), see [`dokploy-operations.md`](dokploy-operations.md).
+For day-two operations (redeploy, rollback, logs, troubleshooting), see [`dokploy-operations.md`](dokploy-operations.md).
 
-## What you need before starting
+## What's already running
 
-1. Dokploy admin credentials and a reachable URL for the UI.
-2. SSH access to the VPS running Dokploy (needed for discovering generated container hostnames and for running the Authentik DB bootstrap). The repo is expected to be cloned somewhere on that host, for example `/opt/specus`.
-3. DNS you control for the domains you will use. This guide assumes Cloudflare.
-4. The Dokploy GitHub App installed against `Specus-Org/infrastructure`. If that is not set up yet: in Dokploy, **Settings → Git → GitHub → Install GitHub App**, then grant access to the repo.
-5. Let's Encrypt email set in Dokploy. In **Settings** there is a field for the email used for ACME registration. Dokploy does not issue any certs until this is set, and it does not warn you loudly that this is the reason.
+The infrastructure team manages these shared services. You do not deploy them, you connect to them.
 
-## Step 1: Understand the service map
+| Shared service | What it is | How you use it |
+|---|---|---|
+| PostgreSQL 17 | Primary relational database with extensions (pg_cron, pg_search, Apache AGE) | Ask the infra team for a dedicated database + role for your service. Never reuse another service's credentials |
+| Redis 7 | Cache and Celery broker, 512 MB, LRU eviction | Ask for a dedicated Redis DB number (0 is unused, 1 is Authentik, higher numbers are available) |
+| Garage | S3-compatible object storage (`storage.specus.biz`) + read-only CDN (`cdn.specus.biz`) | Ask for an S3 access key and a bucket. Your app talks S3 to `https://storage.specus.biz` |
+| Authentik | Identity provider + SSO at `auth.specus.biz` | Ask the infra team to register an OAuth2 client for your service. You get a client ID and secret to wire into your app's auth layer |
+| Airflow | Scheduled workflows | If you need scheduled jobs, coordinate with whoever owns the Airflow DAGs repo |
 
-Before you deploy anything, internalize the dependency order. Services later in this list need services earlier in this list already running and healthy:
+Everything runs on a shared Docker network called `dokploy-network`. Your service joins this network automatically when you deploy through Dokploy, so you reach the shared services by container hostname, not by public URL.
 
-1. `specus-production-database` (Postgres)
-2. `specus-production-redis`
-3. `specus-production-garage` (object storage)
-4. Airflow services (three separate Application deployments sharing one Dockerfile, each with a different command)
-5. `specus-production-authentik` (needs Postgres and Redis and Garage)
+## Before you start
 
-Each of these is a separate Dokploy service. Do not deploy them all at once. Deploy and verify one, then move to the next.
+1. You have a Dokploy account and can log in.
+2. The infra team has granted you access to the project (or created one for your service) inside Dokploy.
+3. You know the container hostnames for any shared services you need to reach. Ask the infra team for the current ones, or pull them yourself from the Dokploy UI (click on the Postgres or Redis service, the hostname is on the General tab). They look like `specus-production-database-rkpsij`.
+4. Your app's code is in a GitHub repo that Dokploy can reach. If the GitHub App is not yet installed on your repo, ask the infra team to grant access.
+5. You know which shared services your app needs and have requested credentials.
 
-## Step 2: Deploy Postgres first
+## Step 1: Choose a service shape
 
-In Dokploy, create a new project called `Infrastructure`, environment `production`. Inside it:
+Dokploy has three service types worth knowing about. Pick based on your app:
 
-**+ Service → Application**
-- Name: `specus-production-database`
-- Build type: Dockerfile
-- Git provider: GitHub
-- Repository: `Specus-Org/infrastructure`
-- Branch: `main`
-- Build context path: `./postgres`
-- Dockerfile: `Dockerfile` (default)
+- **Application (Dockerfile)**: you have a single container and a `Dockerfile` in your repo. This is the common case for web apps, APIs, and workers.
+- **Application (Docker image)**: you have a prebuilt image on a registry (GHCR, Docker Hub). Point Dokploy at the image and it will pull and run it.
+- **Compose**: your app has more than one container (web + worker, or app + nginx, or anything multi-container) and you want to describe them together in a `docker-compose.yml`.
 
-In the **Environment** tab, paste the contents of `postgres/.env.example` with real values filled in. Follow the generation commands in the comments. Never commit `.env` files to Git.
+If your app has a single container today but might split later, start with a Dockerfile Application. Switching to Compose later is a few minutes of work.
 
-Click **Deploy**. Watch the Deployments tab until the build finishes and the container reports healthy. Note the generated container name from the **General** tab (something like `specus-production-database-a7k2m9`). This suffix is unique to your installation and will be important in the next step.
+## Step 2: Create the service in Dokploy
 
-## Step 3: Discover your actual generated hostnames
+In Dokploy, inside the project your team uses:
 
-The `.env.example` files in the repo default their host values to hostnames from the original Specus deployment (for example `POSTGRES_HOST=specus-production-database-rkpsij`). Your installation's suffixes will be different. Before deploying any service that depends on Postgres or Redis, you need to know your actual generated hostnames.
+**+ Service → Application** (or **Compose** if you need more than one container)
 
-From the VPS shell:
+Fill in:
+- **Name**: something stable like `my-app-production`. This becomes the container name on the host and is surfaced in logs.
+- **Git provider**: GitHub
+- **Repository**: your repo
+- **Branch**: `main` (or whichever branch you deploy from)
+- **Build context path**: the directory with your `Dockerfile` or `docker-compose.yml`. `./` if they are at the repo root.
 
-```bash
-docker network inspect dokploy-network \
-  --format '{{range .Containers}}{{.Name}}{{println}}{{end}}' \
-  | sort
+Do not click Deploy yet. The Environment tab is empty, and the service will crash-loop without its config.
+
+## Step 3: Request credentials for shared services
+
+For each shared service your app uses, ask the infra team to create credentials for you. Be specific so they can reply without a back-and-forth:
+
+- **Postgres**: "Please create a database `myapp` and a role `myapp_user` with full privileges on that database only." They will give you the password and confirm the host + database + role.
+- **Redis**: "Please assign me a Redis DB number." They will tell you which one (likely 2 or higher, since 0 is unused and 1 is Authentik).
+- **Garage / S3**: "Please create a bucket `myapp-uploads` and an access key with read and write on it." They will give you the access key ID and secret.
+- **Authentik OAuth2**: "Please register an OAuth2 client for `myapp` with redirect URL `https://myapp.specus.biz/auth/callback`." They will give you the client ID, client secret, and the discovery URL `https://auth.specus.biz/application/o/myapp/.well-known/openid-configuration`.
+
+Write all of these down in your password manager before moving on. They are hard to regenerate without a coordinated rotation.
+
+## Step 4: Fill in the Environment tab
+
+In your service's **Environment** tab, paste one variable per line in `KEY=value` format. Use the container hostnames for internal services, not public domains:
+
+```
+# Postgres
+DATABASE_URL=postgresql://myapp_user:<password>@specus-production-database-<suffix>:5432/myapp
+
+# Redis (DB number assigned by infra)
+REDIS_URL=redis://:<redis-password>@specus-production-redis-<suffix>:6379/3
+
+# Garage S3
+S3_ENDPOINT=https://storage.specus.biz
+S3_BUCKET=myapp-uploads
+S3_REGION=garage
+S3_ACCESS_KEY_ID=<your key>
+S3_SECRET_ACCESS_KEY=<your secret>
+S3_PUBLIC_BASE_URL=https://cdn.specus.biz/myapp-uploads
+
+# Authentik OAuth2
+AUTH_ISSUER=https://auth.specus.biz/application/o/myapp/
+AUTH_CLIENT_ID=<your client id>
+AUTH_CLIENT_SECRET=<your client secret>
+AUTH_REDIRECT_URI=https://myapp.specus.biz/auth/callback
+
+# Your app's own secrets
+SECRET_KEY=<openssl rand -base64 42>
 ```
 
-Note down the hostname for each core service. You will paste these into the env vars of every consumer service.
+The exact variable names depend on your framework. What matters is that the hosts and ports match the container hostnames on `dokploy-network`, and that passwords match what the infra team gave you.
 
-## Step 4: Deploy Redis
+Click **Save**.
 
-Same shape as Postgres:
+## Step 5: Deploy
 
-- Name: `specus-production-redis`
-- Build context path: `./redis`
-- Environment: `REDIS_PASSWORD=<openssl rand -base64 32>`
+Click **Deploy**. Dokploy clones the repo, builds the image (for Dockerfile services) or pulls it (for image or Compose services), and starts the container attached to `dokploy-network` so it can reach the shared services.
 
-Click Deploy. Wait for healthy. No domain needed (Redis is internal-only, reached via the Docker network).
+Watch the **Deployments** tab for build logs. When the build finishes, watch the **Logs** tab for your app's startup output. If the app cannot reach Postgres or Redis, the hostname in your env vars is wrong, try the discovery in the "Before you start" section again.
 
-## Step 5: Initialize the Authentik database (required before deploying Authentik)
+## Step 6: Add a domain
 
-This is a hard gate. If you skip it, Authentik will crash-loop on startup with `FATAL: role "authentik_user" does not exist` and Dokploy's retry counter will burn through attempts. Run the SQL before clicking Deploy on Authentik.
-
-Open `authentik/init-authentik.sql` on the VPS and edit `CHANGE_ME_SECURE_PASSWORD` to the value you plan to use for `AUTHENTIK_DB_PASSWORD`. The script has two SQL blocks. The first block (against the `postgres` database) creates the database and role. The second block (against the `authentik` database) only matters if your `authentik_user` did not end up as owner, which is rare on a clean install. Read the comments in the file before running.
-
-Run the first block:
-
-```bash
-docker exec -i specus-production-database-<your-suffix> \
-  psql -U postgres -d postgres < authentik/init-authentik.sql
-```
-
-Confirm the bootstrap worked:
-
-```bash
-docker exec specus-production-database-<your-suffix> \
-  psql -U authentik_user -d authentik -c "SELECT 1"
-```
-
-If this returns `1`, you are ready to deploy Authentik.
-
-## Step 6: Deploy Authentik
-
-**+ Service → Compose** (not Application, this time, because Authentik has two containers):
-
-- Name: `specus-production-authentik`
-- Git provider: GitHub
-- Repository: `Specus-Org/infrastructure`
-- Branch: `main`
-- Compose path: `./authentik/docker-compose.yml`
-
-In the **Environment** tab, paste the contents of `authentik/.env.example` with real values. The important ones to set for your specific installation:
-
-- `POSTGRES_HOST` must match your Postgres container name from Step 3 (override the default, which is from the original Specus deploy)
-- `REDIS_HOST` must match your Redis container name from Step 3
-- `AUTHENTIK_SECRET_KEY`, `AUTHENTIK_DB_PASSWORD`, `AUTHENTIK_BOOTSTRAP_PASSWORD` all get real generated values
-
-Memory limits for compose services have to live in the compose file, not the Dokploy UI (the UI's `Advanced → Cluster Settings` only applies to Application services, not Compose services). The limits in `authentik/docker-compose.yml` are already sized for an 8 GB host.
-
-## Step 7: Add the domain and DNS carefully
-
-This is where the Let's Encrypt plus Cloudflare pitfall lives. Follow this sequence:
+The domain flow has one trap worth knowing about before you start. Let's Encrypt plus Cloudflare proxied DNS is broken by default, and hitting it burns through Let's Encrypt's rate limits (five failures per hostname per hour, lockout lasts up to a week). Do this sequence:
 
 1. In Cloudflare DNS, add an A record:
-   - Type: A, Name: `auth`, Target: your VPS IP
-   - Proxy: **DNS only (grey cloud) for now**. Do not use the orange cloud yet.
-2. Verify DNS propagation: `dig +short auth.specus.biz` should return your VPS IP within a minute or two.
-3. In Dokploy, open the Authentik service, **Domains → + Add Domain**:
-   - Domain: `auth.specus.biz`
-   - Service: `authentik-server`
-   - Container port: `9000`
-   - HTTPS: enabled (Let's Encrypt)
-4. Wait for Traefik to issue the cert. Watch the logs on the Traefik container if it takes more than a couple of minutes. A successful issuance looks like `Certificate obtained` in Traefik logs.
-5. Only after the cert is issued, go back to Cloudflare and switch the A record to Proxied (orange cloud).
+   - **Type**: A
+   - **Name**: `myapp` (for `myapp.specus.biz`)
+   - **Target**: the VPS IP (ask infra if you do not know it)
+   - **Proxy**: DNS only (grey cloud). Do not enable the orange cloud yet.
+2. Verify DNS propagated: `dig +short myapp.specus.biz` should return the VPS IP within a minute.
+3. In Dokploy, open your service, **Domains → + Add Domain**:
+   - **Domain**: `myapp.specus.biz`
+   - **Service/container**: pick your app's container from the dropdown
+   - **Container port**: whichever port your app listens on
+   - **HTTPS**: enabled (Let's Encrypt)
+4. Wait for the cert to issue. A couple of minutes is normal. If Traefik logs show `Certificate obtained`, you are good.
+5. Go back to Cloudflare and switch the record to Proxied (orange cloud).
 
-The reason for this dance: Dokploy's Traefik uses Let's Encrypt's HTTP-01 challenge by default, which needs unproxied port 80 traffic. With Cloudflare proxying enabled from the start, the challenge fails silently, Traefik retries, and after five failures per hostname per hour Let's Encrypt rate-limits you for up to a week. If you want Cloudflare proxying from the start, switch Traefik to the DNS-01 challenge with a Cloudflare API token (outside the scope of this guide).
+If you want Cloudflare proxied from day one, the alternative is to ask the infra team to configure Traefik's DNS-01 challenge with a Cloudflare API token. That is one-time infra work, not something each service handles on its own.
 
-## Step 8: First login and remove bootstrap credentials
+## Step 7: Smoke test
 
-Open `https://auth.specus.biz` and log in with `akadmin@specus.biz` and the value of `AUTHENTIK_BOOTSTRAP_PASSWORD` you set. Immediately do these:
+Open `https://myapp.specus.biz` in your browser. If the page loads, the green path is working. Hit any endpoint that touches the database, cache, S3, and SSO so you know each integration is wired correctly. Do not trust a homepage render as proof that the whole stack works.
 
-1. Set up a secure password on the `akadmin` user and enable a second factor.
-2. In Dokploy, open the Authentik service's **Environment** tab and delete `AUTHENTIK_BOOTSTRAP_PASSWORD` and `AUTHENTIK_BOOTSTRAP_TOKEN`. Redeploy. The bootstrap credentials are re-ingested on every deploy if they remain set, which defeats the point of rotating them.
+## Where to put your secrets
 
-The Authentik admin credential is the master for all services that delegate SSO to Authentik. Treat it accordingly. Use a password manager, not shell history or a note file.
+Dokploy stores environment variables encrypted at rest, but that encryption is not a backup. If the Dokploy instance is rebuilt or restored, encrypted values that only live in Dokploy are gone. Keep the source of truth in your team's password manager (1Password, Bitwarden, Vault, SOPS-encrypted file, whatever the team uses). Dokploy is a convenience layer, not the canonical store.
 
-## Where to back up your secrets
+## Where to go next
 
-Dokploy stores environment variables encrypted at rest, but that encryption does not help you if the VPS or Dokploy database is lost. Keep your source of truth somewhere else (1Password, Bitwarden, Vault, an age-encrypted file in a separate repo, whatever your team uses). Rotating `AUTHENTIK_SECRET_KEY` without coordinating with the Fernet-encrypted data it protects is destructive, so this source of truth is load-bearing.
-
-## What's next
-
-- Add more services. Each one follows the same shape: provision the database first if needed, discover hostnames, set env vars, deploy, add domain through the grey-cloud-then-orange-cloud sequence.
-- Operate the stack: see [`dokploy-operations.md`](dokploy-operations.md) for redeploy, rollback, logs, and troubleshooting.
-- Reach VPN-only services (Postgres, Redis, Airflow UI, Garage admin UI) by connecting to wg-easy. Client setup is in `scripts/setup-wireguard-client.sh`.
+- Day-to-day operations (redeploy, logs, rollback, troubleshooting): [`dokploy-operations.md`](dokploy-operations.md).
+- Patterns for compose services with more than one container: read `authentik/docker-compose.yml` in this repo as a reference, it shows the dual-network pattern used by the platform services.
+- Scheduled jobs: talk to whoever owns the Airflow DAGs for your team.

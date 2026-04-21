@@ -1,110 +1,66 @@
-# Dokploy Operations
+# Operating Your Service on Dokploy
 
-Day-two reference for the Specus infrastructure stack on Dokploy. Complements [`dokploy-first-deploy.md`](dokploy-first-deploy.md), which covers first-time setup.
+Day-to-day operations reference for a service you deployed onto the Specus infrastructure. Complements [`dokploy-first-deploy.md`](dokploy-first-deploy.md), which covers the initial setup of a new service.
 
-## How Dokploy works for this stack
+## How Dokploy works, from your seat
 
-Deploys are UI-driven. Environment variables live in Dokploy's encrypted store, not in the repo. Generated container hostnames (the `specus-production-*-<suffix>` pattern) are unique to your installation and live in env vars.
+Your service lives in a Dokploy project. You can redeploy it, read its logs, shell into its container, edit its environment variables, and roll it back. You do not control the shared platform services (Postgres, Redis, Garage, Authentik) and you do not control the host itself. If you need something from those, talk to the infra team.
 
-Most services in this repo are deployed as Dokploy Compose services. Postgres and Redis are deployed as Application services with a Dockerfile. Airflow is deployed as three separate Application services sharing one Dockerfile, each with a different `command` override (this is a Dokploy feature on Application services; compose services set the command in the file).
+Your service joins `dokploy-network` at deploy time, which is how it reaches the shared services. Hostnames on this network are the Dokploy-generated container names (for example `specus-production-database-rkpsij`), not the public `.specus.biz` domains.
 
-Resource limits for Compose services must be set in the compose file (`deploy.resources.limits`). Dokploy's UI cannot override them. For Application services, resource limits can be set in the UI.
+Environment variables live in Dokploy's encrypted store. They are displayed in plaintext in the Environment tab when you open it, so watch what you share on screen.
 
 ## Common operations
 
-**Redeploy after a code change**. Push to `main`, then in Dokploy click **Deploy** on the service. Or enable **Auto-deploy** in the service settings so pushes trigger a rebuild via webhook. Auto-deploy fires on any push to the tracked branch, including force-pushes and docs-only commits, so use it on staging freely and be deliberate about turning it on for production.
+**Redeploy after a code change**. Push to the branch Dokploy is tracking, then click **Deploy** on the service. Or enable **Auto-deploy** in the service settings so pushes trigger a rebuild automatically. Auto-deploy fires on every push to the tracked branch, including force-pushes and docs-only commits, so use it freely on staging and consciously on production.
 
-**View live logs**. The **Logs** tab shows each container's stdout/stderr in real time. For Compose services with multiple containers, pick which one. Use the filter box for keywords.
+**Read live logs**. The **Logs** tab streams each container's stdout/stderr. For Compose services with more than one container, pick which one. The filter box helps when a deploy is chatty.
 
-**Exec into a container**. The **Terminal** tab gives a shell inside the running container. Useful for `psql -U postgres -d specus`, `redis-cli -a $REDIS_PASSWORD`, and running service-specific CLI commands (for example `ak` for Authentik). Terminal access is the same trust level as Docker group access on the host, which is effectively root. Restrict who has Dokploy project access accordingly.
+**Shell into a container**. The **Terminal** tab gives a shell inside the running container. Useful for running your framework's CLI (migrations, seeds, one-off scripts) or for quick debugging. Do not use the Terminal to change files that the image builds from, those changes are gone on the next redeploy.
 
-**Update an environment variable**. The **Environment** tab. Edit, save, then click **Deploy** for the change to take effect. Changes are not picked up until the container restarts. Do not edit while an active deploy is running.
+**Update an environment variable**. The **Environment** tab. Edit, save, then click **Deploy** so the container restarts and picks up the change. Changes are not applied live.
 
-**Rollback a bad deploy**. The **Deployments** tab lists past deployments. Pick the last working one and click **Rollback**. Dokploy redeploys the previous image or commit. What rollback does and does not cover:
+**Rollback a bad deploy**. The **Deployments** tab lists every past deployment. Pick the last working one and click **Rollback**. Rollback covers the application code and image. It does not cover database migrations already applied, environment variable changes, or data that was written since the bad deploy. If your bad deploy ran a forward-migration that the old code cannot read, you will need to roll back the database separately. Take a `pg_dump` or equivalent before any risky deploy.
 
-- Covers: application code, container image, build output
-- Does not cover: database migrations already applied, environment variable changes, volume state, data that has been written since the bad deploy
-
-For stateful services (Postgres, Authentik metadata DB), rollback a forward migration by rolling back the database separately. Take a `pg_dump` before any deploy that includes a new migration. Test your rollback procedure on staging before you need it.
-
-**Scale resources**. Application services have an **Advanced → Resources** tab for CPU and memory limits. Compose services have to change the limits in the compose file, commit, push, and redeploy.
+**Scale resources**. For Application services, the **Advanced → Resources** tab exposes CPU and memory limits. For Compose services, limits live in the `deploy.resources.limits` block of your compose file, edit-commit-push-redeploy to change them.
 
 ## Troubleshooting
 
 | What you see | Likely cause | What to do |
 |---|---|---|
-| `ErrImagePull` during deploy | Wrong image path, registry auth failure, or for custom images the build step never ran | Check build logs in the Deployments tab |
-| 404 from the public domain | Traefik has no route for this hostname, or the domain's target container name or port is wrong | Re-check the Domains tab. The container name in the dropdown is the compose service key (for Authentik that is `authentik-server`), not the `container_name` field. Port must match what the container actually listens on |
-| 502 Bad Gateway from the public domain | Container is up but not listening on the port Dokploy expects, or the container is still starting | Exec into the container, `curl localhost:<port>/health`. If that fails, the app has not finished booting or is crashing |
-| Let's Encrypt cert will not issue | Usually because Cloudflare is proxied (orange cloud) before the first cert was issued, which breaks HTTP-01 validation. Let's Encrypt rate-limits after 5 failures per hostname per hour and the lockout can last up to a week | Set the DNS record to grey cloud (DNS only), wait for validation, then switch to orange cloud. Check Dokploy has a Let's Encrypt email set in Settings. If you have already hit the rate limit, wait or switch to DNS-01 challenge with a Cloudflare API token |
-| Service can not reach Postgres or Redis | Env var points at the wrong generated hostname suffix | Run `docker network inspect dokploy-network --format '{{range .Containers}}{{.Name}}{{println}}{{end}}'` on the VPS, update the consumer service's env vars, redeploy |
-| Container OOM-killed (`Exit 137`) | Memory limit is lower than the service actually needs | For Application services, bump the limit in Advanced → Resources. For Compose services, edit `deploy.resources.limits.memory` in the compose file, push, redeploy |
-| Disk full | Docker accumulating dead images, volumes, build cache | On the VPS, `docker system prune -a --volumes`. Do not delete named volumes attached to running services. Run this monthly |
-| Deploy fails because ports are in use | Something outside Dokploy is bound to 80, 443, or 3000 | `sudo ss -tlnp` on the VPS to find the culprit |
-| Compose file not found | Wrong Compose path in the service config | Path is relative to repo root, include the filename. Example: `./authentik/docker-compose.yml` |
+| `ErrImagePull` during deploy | Image path wrong, registry auth failure, or for custom images the build step never ran | Check the Deployments tab build logs. If you build from Dockerfile, verify the build context path and Dockerfile name. If you pull from a registry, verify the image tag exists |
+| 404 from your public domain | Traefik has no route, or the container name or port in the Domains tab is wrong | Open the Domains tab. The container name must match a running container. The port must match what your app actually listens on inside the container |
+| 502 Bad Gateway | Container is up but not listening on the port Dokploy expects, or the app is still starting | Shell into the container and `curl localhost:<port>/health`. If that fails, your app has not finished booting or is crashing after a moment. Read the logs |
+| Let's Encrypt cert will not issue | Usually Cloudflare proxy (orange cloud) is enabled before the first cert was issued, which breaks HTTP-01 validation | Switch the DNS record to grey cloud (DNS only), wait for Traefik to issue the cert, then switch back to orange cloud. Rate limit is five failures per hostname per hour, up to a one-week lockout, so do not just hammer redeploy |
+| App cannot reach Postgres or Redis | Your env var points at the wrong generated container hostname | Look up the current hostname in the Dokploy UI (General tab of the Postgres or Redis service) or ask the infra team. Update your env var and redeploy |
+| Cannot reach Garage S3 | `S3_ENDPOINT` points somewhere wrong, or your S3 credentials are not on the bucket | `S3_ENDPOINT=https://storage.specus.biz` is the public endpoint. If you get 403, the access key does not have rights on the bucket, ask infra to fix the grant |
+| Authentik OAuth2 fails | Redirect URI mismatch between what your app sends and what is registered in Authentik, or the OAuth2 client secret is wrong | In the browser devtools Network tab, check the `redirect_uri` query parameter being sent. It must match exactly what was registered. Protocol, subdomain, path, trailing slash, all exact |
+| Container OOM-killed (`Exit 137`) | Memory limit is lower than the service actually needs | Check `docker stats` or Dokploy's Monitoring tab for actual usage. Bump the limit in Advanced → Resources (Application) or in the compose file (Compose) |
+| Deploy looks stuck | Build is running, just slow; or the build is waiting on a cache miss; or Dokploy is trying to pull a large image | Give it a few minutes. If still stuck after ten, check the Deployments tab for the running build's logs |
 
-### When the UI cannot tell you what is wrong
+When the UI does not tell you what is wrong, the logs usually do. Read them top to bottom, not just the last screen.
 
-Fall back to the VPS shell:
+## What you should not do
 
-- `docker ps -a` shows every container including exited ones
-- `docker logs <container>` shows the full log history
-- `docker network inspect dokploy-network` shows every attached container and its IP
-- `docker exec -it <container> sh` is a direct shell when the Dokploy Terminal tab is unresponsive
+- **Do not modify the shared infrastructure**. Postgres, Redis, Garage, and Authentik are managed by the infra team. Changes there affect every service on the platform. If you need a new Postgres extension, a bigger Redis, or a new Authentik OAuth2 client, file a request, do not shell into the Postgres container and install things yourself.
+- **Do not add `ports:` to your compose file for debugging.** Docker inserts iptables rules that bypass the host firewall, so `ports:` effectively exposes that port to the public internet regardless of `ufw` rules. Use the Dokploy Terminal tab instead.
+- **Do not create public Cloudflare DNS records for Postgres, Redis, Airflow UI, or Garage admin ports**. These are VPN-only services. Public DNS records for them would expose them to the internet, which is a security incident.
+- **Do not commit `.env` files.** Keep the source of truth in a password manager. Dokploy's Environment tab is a runtime store, not a backup.
+- **Do not delete a Dokploy service without a plan for volumes.** Deleting a service removes the container. Attached named volumes may persist or may not, depending on how the service was configured. For stateful services, always snapshot or dump first.
 
-## Service deploy reference
+## Where the platform's limits will bite you
 
-| Service | Dokploy type | Compose/Dockerfile path | Depends on | Public domain |
-|---|---|---|---|---|
-| `specus-production-database` | Application (Dockerfile) | `./postgres` | nothing | none |
-| `specus-production-redis` | Application (Dockerfile) | `./redis` | nothing | none |
-| `specus-production-garage` | Compose | `./garage/docker-compose.yml` | nothing | `storage.specus.biz` (port 3900), `cdn.specus.biz` (port 3902) |
-| `specus-production-airflow-api-server` | Application (Dockerfile, command override: `api-server`) | `./airflow` | Postgres | `airflow.specus.biz` (port 8080) through VPN only |
-| `specus-production-airflow-scheduler` | Application (Dockerfile, command override: `scheduler`) | `./airflow` | Postgres | none |
-| `specus-production-airflow-triggerer` | Application (Dockerfile, command override: `triggerer`) | `./airflow` | Postgres | none |
-| `specus-production-authentik` | Compose | `./authentik/docker-compose.yml` | Postgres, Redis, Garage | `auth.specus.biz` (container `authentik-server`, port 9000) |
+- **Postgres connection budget**. The shared Postgres has a fixed `max_connections`. If your app opens a large connection pool under load, you can starve other services. Set a reasonable pool size (ask infra what fits the current budget) and make sure your app reuses connections.
+- **Redis memory**. The shared Redis is 512 MB with LRU eviction. Your cache keys can be evicted under memory pressure. Cache intentionally (with TTLs and sensible key sizes), not defensively.
+- **Garage bandwidth**. The Garage CDN fronts uploads behind Cloudflare. Very large files or hot traffic may need a content-delivery strategy beyond raw Garage.
+- **Authentik session state**. Authentik stores sessions in Redis DB 1. Rotating its Fernet key or `SUPERSET_SECRET_KEY`-class values in other services destroys session data, so plan rotation carefully.
 
-For each service, `.env.example` in its directory lists every required variable with a generation command. The golden rule: if you see `${FOO}` in a compose file or Dockerfile, it is in `.env.example`.
+## Where to ask for help
 
-### Airflow's three services
+If you hit something this doc does not cover, the infra team is the right escalation path. Before you ask, have ready:
+- The Dokploy service name
+- The error message or symptom, verbatim
+- The deployment timestamp you think things started going wrong
+- What you already tried
 
-Airflow is the unusual one. Three separate Dokploy Application services share one Dockerfile (`airflow/Dockerfile`) and one base environment. The difference is the Docker `CMD` override in each service's Advanced tab:
-
-- `api-server` runs the webserver and API
-- `scheduler` runs the DAG scheduler
-- `triggerer` runs async task triggers
-
-All three use `LocalExecutor`, so Airflow does not need Celery or Redis. All three read from the same metadata database in Postgres.
-
-The `airflow/docker-compose.yml` file in the repo is for local development only. Do not deploy it to Dokploy as a compose service.
-
-## Backups and retention
-
-Dokploy does not back up your data. Set up your own. Minimum viable:
-
-- **Postgres**: scheduled `pg_dump` to Garage or an external object store. A daily dump plus point-in-time recovery via WAL archiving is standard for the shared metadata DB.
-- **Garage**: replicate the `specus` bucket to an external S3 on a schedule. Alternatively, snapshot the Garage data volume from the VPS provider.
-- **Dokploy state**: the `/var/lib/dokploy` volume holds Dokploy's own DB, encrypted env vars, and state. Snapshot this volume weekly.
-- **Secrets**: your out-of-Dokploy password manager is the authority. Dokploy's encrypted-at-rest storage is not a backup.
-
-## Updates
-
-Dokploy itself: check the [Dokploy release notes](https://github.com/Dokploy/dokploy/releases) monthly. Update via Settings when a security patch ships.
-
-Base images (Postgres, Redis, Traefik, Authentik, anything pinned to a specific tag): `unattended-upgrades` on the host does not update Docker images. Rebuild and redeploy services monthly so you pick up base image CVE fixes.
-
-Service-specific image upgrades (for example bumping Authentik from `2026.2.1` to the next release) need a read-through of the upstream changelog. Migrations run on first boot and are rarely reversible.
-
-## Security boundaries to remember
-
-- Dokploy admin + anyone with Terminal tab access + anyone in the Docker group = effective root on the host.
-- Environment variables are visible in plaintext to anyone who opens the Environment tab. Be careful about screen-sharing.
-- Any port you add to a compose file's `ports:` section is exposed to the internet by Docker, bypassing `ufw` if `ufw` is your only firewall. The cloud-provider firewall is the enforcement layer. Do not use `ports:` for debugging without understanding this.
-- Never create a Cloudflare DNS record for Postgres, Redis, Airflow UI, or Garage admin ports. These are VPN-only services. The only public Cloudflare records in this setup are `auth`, `storage`, `cdn`, and `vpn` subdomains.
-- The Authentik bootstrap password must be removed from the Environment tab after first login, otherwise every redeploy re-ingests it.
-
-## Deleting things
-
-Do not delete Dokploy services casually. Deleting a service removes its container, but volumes attached by name persist. Deleting volumes in Dokploy is destructive and not reversible. For stateful services, always take a backup first.
-
-`docker system prune` and `docker volume prune` can wipe volumes that are not attached to a running container. Do not run prune while a service is stopped temporarily.
+That gets you an answer faster than "it is broken."
