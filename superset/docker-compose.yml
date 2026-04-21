@@ -1,34 +1,38 @@
 # Apache Superset BI Stack
-# Web UI + Celery Worker + Celery Beat
+# Web UI + Celery Worker + Celery Beat (+ one-shot init)
+#
+# Uses the upstream apache/superset image directly. superset_config.py is
+# bind-mounted into /app/pythonpath/ and SUPERSET_CONFIG_PATH points at it.
+# No custom image, no CI build step — switch to a custom image the day you
+# need to bundle Python drivers (BigQuery, Trino, ClickHouse, etc.).
 #
 # Prerequisites:
 #   1. Core stack running (PostgreSQL, Redis)
 #   2. Database initialized: run init-superset.sql manually
 #   3. Environment configured: cp .env.example .env && edit
-#   4. Custom image built: ghcr.io/<org>/specus-superset:latest
-#      (built automatically by .github/workflows/build-superset.yml)
 #
 # Usage:
 #   docker-compose --env-file .env up -d
 #
-# First deploy: see bootstrap.md for db upgrade + admin creation steps
+# First deploy: see bootstrap.md for admin creation (db migrations run automatically)
 #
 # Access:
 #   UI: https://superset.specus.biz (configure in Dokploy)
 #   Internal: http://superset-web:8088
 
-x-superset-env: &superset-env
+x-superset-core-env: &superset-core-env
   # Core
   SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+  SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
 
-  # Metadata database (uses core stack)
-  SUPERSET_DB_HOST: ${SUPERSET_DB_HOST:-specus-production-database-rkpsij}
-  SUPERSET_DB_PORT: ${SUPERSET_DB_PORT:-5432}
+  # Metadata database (uses shared core Postgres)
+  POSTGRES_HOST: ${POSTGRES_HOST:-specus-production-database-rkpsij}
+  POSTGRES_PORT: ${POSTGRES_PORT:-5432}
   SUPERSET_DB_NAME: ${SUPERSET_DB_NAME:-superset}
   SUPERSET_DB_USER: ${SUPERSET_DB_USER:-superset_user}
   SUPERSET_DB_PASSWORD: ${SUPERSET_DB_PASSWORD}
 
-  # Redis (uses core stack)
+  # Redis (uses shared core Redis)
   REDIS_HOST: ${REDIS_HOST:-specus-production-redis-h08jhy}
   REDIS_PORT: ${REDIS_PORT:-6379}
   REDIS_PASSWORD: ${REDIS_PASSWORD}
@@ -38,17 +42,57 @@ x-superset-env: &superset-env
 
   # Internal webdriver URL (worker → web for thumbnails)
   SUPERSET_WEBDRIVER_BASEURL: http://superset-web:8088/
-  SUPERSET_DOMAIN_URL: https://${SUPERSET_DOMAIN:-superset.specus.biz}/
+  SUPERSET_DOMAIN_URL: https://${SUPERSET_DOMAIN}/
+
+x-superset-image: &superset-image
+  image: apache/superset:${SUPERSET_VERSION:-4.1.2}
+
+x-superset-config-mount: &superset-config-mount
+  type: bind
+  source: ./superset_config.py
+  target: /app/pythonpath/superset_config.py
+  read_only: true
 
 services:
+  # One-shot migration + role init. Runs on every `up`, exits 0 when migrations
+  # are already current. Web/worker/beat depend on its successful completion so
+  # nothing boots against a pre-migration schema.
+  superset-init:
+    <<: *superset-image
+    container_name: specus-superset-init
+    hostname: superset-init
+    command:
+      - /bin/bash
+      - -c
+      - "superset db upgrade && superset init"
+    restart: "no"
+    environment:
+      <<: *superset-core-env
+    networks:
+      - superset-internal
+    volumes:
+      - *superset-config-mount
+      - superset-home:/app/superset_home
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 768M
+
   superset-web:
-    image: ghcr.io/${GITHUB_ORG:-specus-org}/specus-superset:${SUPERSET_VERSION:-latest}
+    <<: *superset-image
     container_name: specus-superset-web
     hostname: superset-web
     command: ["/usr/bin/run-server.sh"]
     restart: unless-stopped
     environment:
-      <<: *superset-env
+      <<: *superset-core-env
+      # Cap Gunicorn workers so the shared Postgres connection budget isn't
+      # exhausted (see superset_config.py pool sizing comment).
+      SERVER_WORKER_AMOUNT: ${SUPERSET_WEB_WORKERS:-4}
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
     networks:
       - superset-internal
       - dokploy-network
@@ -59,6 +103,7 @@ services:
       retries: 5
       start_period: 90s
     volumes:
+      - *superset-config-mount
       - superset-home:/app/superset_home
     deploy:
       resources:
@@ -70,7 +115,7 @@ services:
           memory: 512M
 
   superset-worker:
-    image: ghcr.io/${GITHUB_ORG:-specus-org}/specus-superset:${SUPERSET_VERSION:-latest}
+    <<: *superset-image
     container_name: specus-superset-worker
     hostname: superset-worker
     command:
@@ -81,18 +126,24 @@ services:
       - --concurrency=2
     restart: unless-stopped
     environment:
-      <<: *superset-env
+      <<: *superset-core-env
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
     networks:
       - superset-internal
     healthcheck:
+      # Use $$(hostname) rather than $$HOSTNAME: the latter is a bash/interactive
+      # shell builtin that is empty under /bin/sh (dash/ash) which CMD-SHELL uses.
       test:
         - "CMD-SHELL"
-        - "celery --app=superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME || exit 1"
+        - "celery --app=superset.tasks.celery_app:app inspect ping -d celery@$$(hostname) || exit 1"
       interval: 30s
       timeout: 20s
       retries: 3
       start_period: 60s
     volumes:
+      - *superset-config-mount
       - superset-home:/app/superset_home
     deploy:
       resources:
@@ -104,7 +155,7 @@ services:
           memory: 256M
 
   superset-beat:
-    image: ghcr.io/${GITHUB_ORG:-specus-org}/specus-superset:${SUPERSET_VERSION:-latest}
+    <<: *superset-image
     container_name: specus-superset-beat
     hostname: superset-beat
     command:
@@ -112,31 +163,48 @@ services:
       - --app=superset.tasks.celery_app:app
       - beat
       - --loglevel=info
-      - --schedule=/app/superset_home/celerybeat-schedule
+      - --schedule=/app/superset_beat/celerybeat-schedule
     restart: unless-stopped
     environment:
-      <<: *superset-env
+      <<: *superset-core-env
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
     networks:
       - superset-internal
     healthcheck:
-      test: ["CMD-SHELL", "test -f /app/superset_home/celerybeat-schedule || exit 1"]
+      # Mtime freshness — beat rewrites the schedule file every tick, so stale
+      # mtime (>120s) means the process is dead even if the file exists.
+      test:
+        - "CMD-SHELL"
+        - "test $$(( $$(date +%s) - $$(stat -c %Y /app/superset_beat/celerybeat-schedule 2>/dev/null || echo 0) )) -lt 120"
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 90s
     volumes:
-      - superset-home:/app/superset_home
+      - *superset-config-mount
+      # Dedicated volume — beat is the exclusive writer of celerybeat-schedule,
+      # keeping it off the shared superset-home volume avoids accidental
+      # corruption if another container ever touches the path.
+      - superset-beat-schedule:/app/superset_beat
     deploy:
+      # Beat MUST be a singleton. Two beat processes reading the same shelve
+      # file and dispatching the same cron cause duplicate alerts and
+      # shelve corruption. Do not scale this service beyond replicas=1.
+      replicas: 1
       resources:
         limits:
           cpus: '0.25'
-          memory: 256M
+          memory: 512M
         reservations:
           cpus: '0.1'
           memory: 128M
 
 volumes:
   superset-home:
+    driver: local
+  superset-beat-schedule:
     driver: local
 
 networks:

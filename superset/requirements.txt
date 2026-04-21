@@ -1,6 +1,0 @@
-# Extra Python dependencies for specus-superset
-# Add warehouse/analytics drivers here when needed:
-#   apache-superset[bigquery]
-#   apache-superset[trino]
-#   clickhouse-connect
-#   duckdb-engine

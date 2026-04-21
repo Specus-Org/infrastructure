@@ -10,7 +10,7 @@ Follow in order — most steps only need to happen once.
 - Core stack is running: PostgreSQL (`specus-production-database-rkpsij`) and Redis (`specus-production-redis-h08jhy`) are healthy.
 - You have a SQL client (DBeaver or psql) that can reach the shared Postgres.
 - `.env` is filled in: `cp .env.example .env` then set all required values.
-- The `specus-superset` image has been pushed to GHCR by CI (or built locally).
+- The Dokploy service is wired to this repo so `superset_config.py` lands on the host next to `docker-compose.yml` (the compose bind-mounts it into every container).
 
 ---
 
@@ -18,8 +18,8 @@ Follow in order — most steps only need to happen once.
 
 Connect to the shared Postgres with a superuser and run `init-superset.sql` in two parts:
 
-1. **Connected to `postgres` database** — run Step 1 block (creates `superset` DB and `superset_user`).
-2. **Switch connection to `superset` database** — run Step 2 block (grants schema privileges).
+1. **Connected to `postgres` database** — run Step 1 block (creates `superset` DB, `superset_user`, transfers ownership, revokes cross-DB connect).
+2. **Switch connection to `superset` database** — Step 2 is a no-op for the default setup (ownership transfer in Step 1 covers the schema). Only uncomment the grants if migrations will run as a different role.
 
 Replace `CHANGE_ME_SECURE_PASSWORD` with the value of `SUPERSET_DB_PASSWORD` from your `.env`.
 
@@ -31,75 +31,72 @@ Replace `CHANGE_ME_SECURE_PASSWORD` with the value of `SUPERSET_DB_PASSWORD` fro
 docker-compose --env-file .env up -d
 ```
 
-Wait until all three containers are `healthy`:
+The `superset-init` service runs first and blocks on `superset db upgrade && superset init`. The web, worker, and beat containers only start after it exits successfully, so you will never see them attempt to boot against an unmigrated schema.
+
+Wait until the three long-running containers are `healthy`:
 
 ```bash
 docker-compose --env-file .env ps
 ```
 
+`superset-init` will show status `Exit 0` — that's expected.
+
 ---
 
-## Step 3: Run database migrations
+## Step 3: Create the admin user
 
-*Safe to re-run on redeploys.*
+*One-shot — running this with different values creates a second admin.*
+
+Pass the password via stdin instead of `--password` so it never lands in shell history, the Docker daemon log, or `ps auxww`:
 
 ```bash
-docker exec specus-superset-web superset db upgrade
+printf '%s\n' "$SUPERSET_ADMIN_PASSWORD" | \
+  docker exec -i specus-superset-web superset fab create-admin \
+    --username "$SUPERSET_ADMIN_USERNAME" \
+    --firstname "$SUPERSET_ADMIN_FIRSTNAME" \
+    --lastname "$SUPERSET_ADMIN_LASTNAME" \
+    --email "$SUPERSET_ADMIN_EMAIL"
 ```
+
+Export the `SUPERSET_ADMIN_*` variables in your shell for this one command only — do **not** commit them to `.env`. See `.env.example` § Admin Bootstrap for suggested values.
+
+After the admin is created, clear the password from your shell: `unset SUPERSET_ADMIN_PASSWORD`.
 
 ---
 
-## Step 4: Create the admin user
-
-*One-shot — running this twice with different values creates two admins.*
-
-```bash
-docker exec -it specus-superset-web superset fab create-admin \
-  --username admin \
-  --firstname Admin \
-  --lastname User \
-  --email admin@specus.biz \
-  --password YOUR_ADMIN_PASSWORD
-```
-
-Use the values from your `.env` (`SUPERSET_ADMIN_*`).
-
----
-
-## Step 5: Initialize roles and permissions
-
-*Safe to re-run on redeploys or after upgrading Superset.*
-
-```bash
-docker exec specus-superset-web superset init
-```
-
----
-
-## Step 6: Register the specus Postgres data source
+## Step 4: Register the specus Postgres data source
 
 1. Log in to `https://superset.specus.biz` with the admin credentials.
-2. Navigate to **Settings → Database Connections → + Database**.
-3. Select **PostgreSQL**.
+2. Create a read-only Postgres role for Superset to use. Connect to the shared Postgres as a superuser on the `specus` database and run:
+   ```sql
+   CREATE USER specus_readonly WITH ENCRYPTED PASSWORD '<generate-with-openssl-rand>';
+   GRANT CONNECT ON DATABASE specus TO specus_readonly;
+   GRANT USAGE ON SCHEMA public TO specus_readonly;
+   GRANT SELECT ON ALL TABLES IN SCHEMA public TO specus_readonly;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public
+     GRANT SELECT ON TABLES TO specus_readonly;
+   ```
+3. In Superset: **Settings → Database Connections → + Database → PostgreSQL**.
 4. Enter the SQLAlchemy URI:
    ```
-   postgresql+psycopg2://<user>:<password>@specus-production-database-rkpsij:5432/specus
+   postgresql+psycopg2://specus_readonly:<password>@specus-production-database-rkpsij:5432/specus
    ```
-   Use a dedicated read-only role on the `specus` database (create one with `CREATE USER specus_readonly WITH ENCRYPTED PASSWORD '...'; GRANT CONNECT ON DATABASE specus TO specus_readonly; GRANT USAGE ON SCHEMA public TO specus_readonly; GRANT SELECT ON ALL TABLES IN SCHEMA public TO specus_readonly; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO specus_readonly;`).
 5. Click **Test Connection** → **Connect**.
+6. On the connection's **Advanced → Security** tab, confirm **Allow DML** is off. Superset's `PREVENT_UNSAFE_DB_CONNECTIONS=True` (set in `superset_config.py`) is the belt — this checkbox is the braces.
 
 ---
 
-## Step 7: Smoke test
+## Step 5: Smoke test
 
 1. Navigate to **SQL Lab**.
 2. Select the `specus` database.
 3. Run: `SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';`
-4. Confirm the query completes asynchronously (result arrives via Celery worker).
+4. Click **Run** (default is synchronous; switch to async with the toggle and run again).
+5. Confirm both sync and async modes return results. Async proves the full web → broker → worker → results-backend chain is wired correctly.
 
 ---
 
-## Step 8: Dokploy + Cloudflare routing
+## Step 6: Dokploy + Cloudflare routing
 
 In Dokploy, add a domain to the Superset **compose service**:
 
@@ -112,16 +109,37 @@ In Cloudflare DNS, add:
 
 | Type | Name | Target | Proxy |
 |------|------|--------|-------|
-| A | bi | `<server-ip>` | Proxied (orange cloud) |
+| A | superset | `<server-ip>` | Proxied (orange cloud) |
 
 ---
 
 ## Redeployment checklist
 
-On subsequent deploys (image update, config change):
+On subsequent deploys (config change, Superset version bump):
 
 1. Pull new image: `docker-compose --env-file .env pull`
 2. Restart: `docker-compose --env-file .env up -d`
-3. Run migrations: `docker exec specus-superset-web superset db upgrade` *(idempotent)*
-4. Re-init roles: `docker exec specus-superset-web superset init` *(idempotent)*
-5. **Do NOT re-run `fab create-admin`** unless you intend to create a second admin.
+3. `superset-init` runs again automatically and re-applies any new migrations. `superset db upgrade` and `superset init` are both idempotent, so this is safe.
+4. **Do NOT re-run the admin creation command** unless you intend to create a second admin.
+
+---
+
+## Rotating `SUPERSET_SECRET_KEY`
+
+**Warning:** `SUPERSET_SECRET_KEY` is the Fernet key Superset uses to encrypt the stored passwords of all registered data source connections (the `dbs.password` column in the metadata DB). Rotating it without the re-encryption dance below will brick every data source — SQL Lab queries and scheduled reports will fail with `InvalidToken` errors and you will have to re-enter every connection password by hand.
+
+Safe rotation:
+
+1. Set the current key as `PREVIOUS_SECRET_KEY` and the new key as `SUPERSET_SECRET_KEY` in `.env`.
+2. Add this to the top of `superset_config.py` (temporary):
+   ```python
+   PREVIOUS_SECRET_KEY = os.environ["PREVIOUS_SECRET_KEY"]
+   ```
+3. `docker-compose --env-file .env up -d` (containers restart with both keys available).
+4. Re-encrypt existing secrets:
+   ```bash
+   docker exec specus-superset-web superset re-encrypt-secrets
+   ```
+5. Remove `PREVIOUS_SECRET_KEY` from `.env` and the config, restart once more.
+
+If you skip this dance, the only recovery path is re-entering every data source credential via the Superset UI.

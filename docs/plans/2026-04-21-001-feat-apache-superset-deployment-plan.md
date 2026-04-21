@@ -7,6 +7,23 @@ date: 2026-04-21
 
 # feat: Add Apache Superset to Specus infrastructure
 
+## Implementation Pivot (2026-04-21, after ce:review)
+
+During execution, the custom-image approach (Units 1, 7, parts of 8) was dropped in favor of using the upstream `apache/superset:4.1.2` image directly with `superset_config.py` bind-mounted into the container. Reasons:
+
+- `requirements.txt` stayed empty — no drivers landed in this iteration, so the seam for custom packages was pure overhead.
+- The CI-published GHCR image introduced a P0 image-path bug (compose pulled `ghcr.io/specus-org/specus-superset` but CI pushed to `ghcr.io/specus-org/infrastructure/specus-superset`). Eliminating the custom image eliminated the bug.
+- Bind-mount changes land on `docker-compose up -d` in seconds; a custom-image tweak required GHCR build + pull round-trip.
+
+**What changed vs. this plan:**
+- `superset/Dockerfile` — not created (Unit 1 dropped).
+- `superset/requirements.txt` — not created (Unit 1 dropped).
+- `.github/workflows/build-superset.yml` — not created (Unit 7 dropped).
+- `superset/docker-compose.yml` — uses `apache/superset:${SUPERSET_VERSION}` with `./superset_config.py` bind-mounted via a YAML anchor. Added a one-shot `superset-init` service running `db upgrade && superset init` that web/worker/beat `depends_on: service_completed_successfully`.
+- `README.md` — registry-URL and Dockerfile sections adjusted to reflect upstream-image use.
+
+**When to revisit:** The day a Python driver lands (BigQuery, Trino, ClickHouse, etc.), reintroduce the custom image as a small follow-up plan. At that point the plan will be ~15 lines of Dockerfile + restoring `build-superset.yml`.
+
 ## Overview
 
 Add Apache Superset as a new Dokploy-deployable service in the Specus infrastructure repo, following the existing pattern (custom image + compose-based stack + GHCR CI + README docs). Ship a production-shaped topology (web + Celery worker + Celery beat) that reuses the shared PostgreSQL and Redis core stack, authenticates against Superset's built-in DB auth for now, and connects to the shared `specus` Postgres as its first data source. Authentik SSO and additional warehouse drivers are deferred to follow-up iterations.

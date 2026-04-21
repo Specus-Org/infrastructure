@@ -117,7 +117,7 @@ Create each service in Dokploy as a Docker image deployment:
 - **specus-airflow-triggerer**: `ghcr.io/<username>/specus-airflow:latest`
 - **specus-garage**: Deploy `garage/docker-compose.yml` as a Dokploy compose service (includes Garage + WebUI)
 - **specus-authentik**: Deploy `authentik/docker-compose.yml` as a Dokploy compose service (server + worker)
-- **specus-superset**: Deploy `superset/docker-compose.yml` as a Dokploy compose service (web + worker + beat)
+- **specus-superset**: Deploy `superset/docker-compose.yml` as a Dokploy compose service (uses upstream `apache/superset:4.1.2` with bind-mounted config; init + web + worker + beat)
 
 ### 2. Network Configuration
 
@@ -188,10 +188,10 @@ for database setup and `superset/bootstrap.md` for the first-deploy runbook.
 ```
 SUPERSET_SECRET_KEY=<openssl rand -base64 42>
 SUPERSET_DB_PASSWORD=<openssl rand -base64 32>
-SUPERSET_ADMIN_PASSWORD=<openssl rand -base64 32>
 REDIS_PASSWORD=<same as core stack>
-GITHUB_ORG=<your-github-org>
 ```
+
+> Admin credentials are supplied interactively during first-deploy bootstrap (see `superset/bootstrap.md`), not stored in `.env`.
 
 #### Airflow Scheduler
 
@@ -233,9 +233,10 @@ Start services in order:
 8. Airflow API Server
 9. Authentik Worker
 10. Authentik Server
-11. Superset Worker
-12. Superset Beat
-13. Superset Web (runs `superset db upgrade` + `superset init` on first start — see `superset/bootstrap.md`)
+11. Superset Init (one-shot, runs `superset db upgrade` + `superset init`)
+12. Superset Worker
+13. Superset Beat (singleton — do not scale beyond 1 replica)
+14. Superset Web — see `superset/bootstrap.md` for admin creation
 
 ### 6. Resource Allocation
 
@@ -252,8 +253,8 @@ Start services in order:
 | Authentik Worker | 1GB | 1 |
 | Superset Web | 1GB | 0.5 |
 | Superset Worker | 1GB | 0.5 |
-| Superset Beat | 256MB | 0.25 |
-| **Total** | **~9.0GB** | **7.25** |
+| Superset Beat | 512MB | 0.25 |
+| **Total** | **~9.25GB** | **7.25** |
 
 > Airflow parallelism is capped at 8 concurrent tasks to prevent OOM.
 > All services have memory limits enforced in docker-compose to prevent OOM cascades.
@@ -271,8 +272,9 @@ Images are automatically built and pushed to GitHub Container Registry on:
 ghcr.io/<username>/specus-postgres:17
 ghcr.io/<username>/specus-redis:7
 ghcr.io/<username>/specus-airflow:latest
-ghcr.io/<username>/specus-superset:latest
 ```
+
+> Superset uses the upstream `apache/superset` image directly with a bind-mounted config — no custom image is built or published for it in this iteration.
 
 ### Manual Build Trigger
 
@@ -447,10 +449,8 @@ infrastructure/
 │   ├── init-authentik.sql        # Database initialization
 │   └── traefik-config.example.yml # Traefik reference
 ├── superset/
-│   ├── Dockerfile                # FROM apache/superset + bundled config
-│   ├── requirements.txt          # Extra Python deps (empty in this iteration)
-│   ├── superset_config.py        # Metadata DB, Celery, cache, auth config
-│   ├── docker-compose.yml        # Web + Worker + Beat (Dokploy compose)
+│   ├── superset_config.py        # Metadata DB, Celery, cache, auth config (bind-mounted)
+│   ├── docker-compose.yml        # Init + Web + Worker + Beat (uses upstream apache/superset)
 │   ├── init-superset.sql         # Manual DB + role bootstrap
 │   ├── .env.example              # All Superset secrets and config
 │   └── bootstrap.md              # First-deploy runbook
