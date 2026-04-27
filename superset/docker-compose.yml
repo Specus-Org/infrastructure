@@ -45,7 +45,11 @@ x-superset-core-env: &superset-core-env
   SUPERSET_DOMAIN_URL: https://${SUPERSET_DOMAIN}/
 
 x-superset-image: &superset-image
-  image: apache/superset:${SUPERSET_VERSION:-4.1.2}
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      SUPERSET_VERSION: ${SUPERSET_VERSION:-4.1.2}
 
 x-superset-config-mount: &superset-config-mount
   type: bind

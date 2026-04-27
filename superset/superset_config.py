@@ -33,7 +33,7 @@ _db_port = os.environ.get("POSTGRES_PORT", "5432")
 _db_name = os.environ.get("SUPERSET_DB_NAME", "superset")
 
 SQLALCHEMY_DATABASE_URI = (
-    f"postgresql+psycopg://{_db_user}:{_db_pass}@{_db_host}:{_db_port}/{_db_name}"
+    f"postgresql+psycopg2://{_db_user}:{_db_pass}@{_db_host}:{_db_port}/{_db_name}"
 )
 
 # Pool sized assuming SERVER_WORKER_AMOUNT=2 (Tier 1 / 8 GB host):
