@@ -74,6 +74,7 @@ services:
       <<: *superset-core-env
     networks:
       - superset-internal
+      - dokploy-network
     volumes:
       - *superset-config-mount
       - superset-home:/app/superset_home
@@ -137,6 +138,7 @@ services:
         condition: service_completed_successfully
     networks:
       - superset-internal
+      - dokploy-network
     healthcheck:
       # Use $$(hostname) rather than $$HOSTNAME: the latter is a bash/interactive
       # shell builtin that is empty under /bin/sh (dash/ash) which CMD-SHELL uses.
@@ -177,6 +179,7 @@ services:
         condition: service_completed_successfully
     networks:
       - superset-internal
+      - dokploy-network
     healthcheck:
       # Mtime freshness — beat rewrites the schedule file every tick, so stale
       # mtime (>120s) means the process is dead even if the file exists.
