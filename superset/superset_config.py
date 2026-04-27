@@ -204,16 +204,34 @@ AUTH_USER_REGISTRATION = False
 # SECURITY HEADERS
 # =============================================================================
 
-# Talisman is enabled with Superset's upstream CSP defaults (hardened
-# default-src / object-src / nonce-in-script-src). Do not override CSP here
-# unless adding a trusted external source — disabling it strips the
-# defense-in-depth layer against stored XSS in dashboards.
+# Superset's Ant Design UI injects styles at runtime (CSS-in-JS), which requires
+# style-src 'unsafe-inline'. The content_security_policy dict must be provided
+# explicitly — omitting it causes Talisman to use bare default-src 'self' which
+# blocks both inline styles and the nonce-gated script-src.
 TALISMAN_ENABLED = True
 TALISMAN_CONFIG = {
     "force_https": True,
     "strict_transport_security": True,
     "session_cookie_secure": True,
+    "content_security_policy": {
+        "default-src": ["'self'"],
+        "img-src": ["'self'", "data:", "blob:"],
+        "worker-src": ["'self'", "blob:"],
+        "connect-src": [
+            "'self'",
+            "https://api.mapbox.com",
+            "https://events.mapbox.com",
+        ],
+        "object-src": "'none'",
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "script-src": ["'self'", "'strict-dynamic'"],
+    },
+    "content_security_policy_nonce_in": ["script-src"],
 }
+
+# Disable the upstream scarf.sh telemetry pixel — it would require adding an
+# external URL to img-src and leaks deployment metadata to a third party.
+SCARF_ANALYTICS = False
 
 # =============================================================================
 # MISC
