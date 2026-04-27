@@ -106,6 +106,8 @@ SELECT extname, extversion FROM pg_extension ORDER BY extname;
 
 ## Dokploy Deployment
 
+> **Onboarding a new VPS?** Start with [`docs/dokploy-first-deploy.md`](docs/dokploy-first-deploy.md) for a full walkthrough from empty host to Authentik live. For day-two operations (redeploy, logs, rollback, troubleshooting), see [`docs/dokploy-operations.md`](docs/dokploy-operations.md). The sections below are a terse per-service reference.
+
 ### 1. Create Services
 
 Create each service in Dokploy as a Docker image deployment:
@@ -334,7 +336,7 @@ garage bucket alias set --global cdn.specus.biz lexicon
 
 Cloudflare provides SSL termination and caching in front of Traefik.
 
-#### d) Dokploy service — expose S3 API and web gateway
+#### d) Dokploy service - expose S3 API and web gateway
 
 In Dokploy, add **two domains** to the Garage service:
 
