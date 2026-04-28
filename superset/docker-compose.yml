@@ -161,6 +161,28 @@ services:
           cpus: '0.25'
           memory: 256M
 
+  # One-shot ownership fix for the dedicated Celery Beat schedule volume.
+  # Docker creates an empty named volume as root:root on first deploy, while the
+  # Superset image runs Beat as uid/gid 1000. Without this, Beat can restart-loop
+  # with "permission denied: /app/superset_beat/celerybeat-schedule".
+  superset-beat-permissions:
+    <<: *superset-image
+    container_name: specus-superset-beat-permissions
+    hostname: superset-beat-permissions
+    user: root
+    command:
+      - /bin/bash
+      - -c
+      - "mkdir -p /app/superset_beat && chown -R 1000:1000 /app/superset_beat"
+    restart: "no"
+    volumes:
+      - superset-beat-schedule:/app/superset_beat
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 128M
+
   superset-beat:
     <<: *superset-image
     container_name: specus-superset-beat
@@ -176,6 +198,8 @@ services:
       <<: *superset-core-env
     depends_on:
       superset-init:
+        condition: service_completed_successfully
+      superset-beat-permissions:
         condition: service_completed_successfully
     networks:
       - superset-internal

@@ -31,7 +31,7 @@ Replace `CHANGE_ME_SECURE_PASSWORD` with the value of `SUPERSET_DB_PASSWORD` fro
 docker-compose --env-file .env up -d
 ```
 
-The `superset-init` service runs first and blocks on `superset db upgrade && superset init`. The web, worker, and beat containers only start after it exits successfully, so you will never see them attempt to boot against an unmigrated schema.
+The `superset-init` service runs first and blocks on `superset db upgrade && superset init`. The web and worker containers only start after it exits successfully, and Beat also waits for the `superset-beat-permissions` one-shot to make its schedule volume writable by the `superset` user.
 
 Wait until the three long-running containers are `healthy`:
 
@@ -39,7 +39,7 @@ Wait until the three long-running containers are `healthy`:
 docker-compose --env-file .env ps
 ```
 
-`superset-init` will show status `Exit 0` — that's expected.
+`superset-init` and `superset-beat-permissions` will show status `Exit 0` — that's expected.
 
 ---
 
@@ -67,19 +67,20 @@ After the admin is created, clear the password from your shell: `unset SUPERSET_
 ## Step 4: Register the specus Postgres data source
 
 1. Log in to `https://superset.specus.biz` with the admin credentials.
-2. Create a read-only Postgres role for Superset to use. Connect to the shared Postgres as a superuser on the `specus` database and run:
-   ```sql
-   CREATE USER specus_readonly WITH ENCRYPTED PASSWORD '<generate-with-openssl-rand>';
-   GRANT CONNECT ON DATABASE specus TO specus_readonly;
-   GRANT USAGE ON SCHEMA public TO specus_readonly;
-   GRANT SELECT ON ALL TABLES IN SCHEMA public TO specus_readonly;
-   ALTER DEFAULT PRIVILEGES IN SCHEMA public
-     GRANT SELECT ON TABLES TO specus_readonly;
+2. Confirm the read-only Postgres role exists. Fresh Postgres deployments create it from `postgres/init-scripts/03-superset-readonly.sh` when `SUPERSET_READONLY_PASSWORD` is set in `postgres/.env`.
+
+   For an existing Postgres volume, run the same script once after deploying an image that contains it:
+   ```bash
+   export SUPERSET_READONLY_PASSWORD='<generate-with-openssl-rand>'
+   POSTGRES_CONTAINER=$(docker ps --format '{{.Names}}' | grep '^specus-production-database-rkpsij' | head -1)
+   docker exec -e SUPERSET_READONLY_PASSWORD="$SUPERSET_READONLY_PASSWORD" \
+     "$POSTGRES_CONTAINER" \
+     /docker-entrypoint-initdb.d/03-superset-readonly.sh
    ```
 3. In Superset: **Settings → Database Connections → + Database → PostgreSQL**.
 4. Enter the SQLAlchemy URI:
    ```
-   postgresql+psycopg2://specus_readonly:<password>@specus-production-database-rkpsij:5432/specus
+   postgresql+psycopg2://superset_readonly:<SUPERSET_READONLY_PASSWORD>@specus-production-database-rkpsij:5432/specus
    ```
 5. Click **Test Connection** → **Connect**.
 6. On the connection's **Advanced → Security** tab, confirm **Allow DML** is off. Superset's `PREVENT_UNSAFE_DB_CONNECTIONS=True` (set in `superset_config.py`) is the belt — this checkbox is the braces.

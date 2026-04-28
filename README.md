@@ -131,6 +131,9 @@ Ensure all services are on the same Dokploy network for internal communication.
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=<secure-password>
 POSTGRES_DB=specus
+SPECUS_APP_PASSWORD=<secure-password>
+AIRFLOW_DB_PASSWORD=<secure-password>
+SUPERSET_READONLY_PASSWORD=<secure-password>
 ```
 
 #### Redis
@@ -192,6 +195,7 @@ REDIS_PASSWORD=<same as core stack>
 ```
 
 > Admin credentials are supplied interactively during first-deploy bootstrap (see `superset/bootstrap.md`), not stored in `.env`.
+> Superset's read-only BI data-source role is created by the PostgreSQL stack as `superset_readonly`; set `SUPERSET_READONLY_PASSWORD` in `postgres/.env`.
 
 #### Airflow Scheduler
 
@@ -234,9 +238,10 @@ Start services in order:
 9. Authentik Worker
 10. Authentik Server
 11. Superset Init (one-shot, runs `superset db upgrade` + `superset init`)
-12. Superset Worker
-13. Superset Beat (singleton — do not scale beyond 1 replica)
-14. Superset Web — see `superset/bootstrap.md` for admin creation
+12. Superset Beat Permissions (one-shot, fixes schedule-volume ownership)
+13. Superset Worker
+14. Superset Beat (singleton — do not scale beyond 1 replica)
+15. Superset Web — see `superset/bootstrap.md` for admin creation
 
 ### 6. Resource Allocation
 
@@ -458,7 +463,7 @@ infrastructure/
 │   └── traefik-config.example.yml # Traefik reference
 ├── superset/
 │   ├── superset_config.py        # Metadata DB, Celery, cache, auth config (bind-mounted)
-│   ├── docker-compose.yml        # Init + Web + Worker + Beat (uses upstream apache/superset)
+│   ├── docker-compose.yml        # Init + Web + Worker + Beat (+ Beat permissions one-shot)
 │   ├── init-superset.sql         # Manual DB + role bootstrap
 │   ├── .env.example              # All Superset secrets and config
 │   └── bootstrap.md              # First-deploy runbook

@@ -204,18 +204,15 @@ AUTH_USER_REGISTRATION = False
 # SECURITY HEADERS
 # =============================================================================
 
-# Superset's Ant Design UI injects styles at runtime (CSS-in-JS), which requires
-# style-src 'unsafe-inline'. The content_security_policy dict must be provided
-# explicitly — omitting it causes Talisman to use bare default-src 'self' which
-# blocks both inline styles and the nonce-gated script-src.
+# Talisman is enabled with Superset's upstream CSP defaults plus production
+# HTTPS settings. Keep the explicit CSP here: once TALISMAN_CONFIG is defined,
+# Flask-Talisman does not merge in Superset's default content_security_policy.
 TALISMAN_ENABLED = True
 TALISMAN_CONFIG = {
-    "force_https": True,
-    "strict_transport_security": True,
-    "session_cookie_secure": True,
     "content_security_policy": {
+        "base-uri": ["'self'"],
         "default-src": ["'self'"],
-        "img-src": ["'self'", "data:", "blob:"],
+        "img-src": ["'self'", "blob:", "data:"],
         "worker-src": ["'self'", "blob:"],
         "connect-src": [
             "'self'",
@@ -227,6 +224,9 @@ TALISMAN_CONFIG = {
         "script-src": ["'self'", "'strict-dynamic'"],
     },
     "content_security_policy_nonce_in": ["script-src"],
+    "force_https": True,
+    "strict_transport_security": True,
+    "session_cookie_secure": True,
 }
 
 # Disable the upstream scarf.sh telemetry pixel — it would require adding an
