@@ -25,7 +25,7 @@ services:
     hostname: umami
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       DATABASE_TYPE: postgresql
       DATABASE_URL: postgresql://${UMAMI_DB_USER:-umami_user}:${UMAMI_DB_PASSWORD}@${UMAMI_DB_HOST:-specus-production-database-rkpsij}:${UMAMI_DB_PORT:-5432}/${UMAMI_DB_NAME:-umami}
