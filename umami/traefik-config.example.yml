@@ -1,0 +1,59 @@
+# Traefik dynamic configuration for Umami split routing.
+#
+# NOTE: This file is for REFERENCE. Copy it to Traefik's file provider
+# directory on the host running Umami and update the domain before deploying.
+#
+# Split routing cannot be configured via Dokploy's Domain UI alone — it
+# requires the Traefik file provider because two different rule priorities
+# must share a single hostname.
+#
+# Two router groups on umami.specus.biz:
+#   1. Collection (public, no auth): /script.js and /api/send. Higher priority
+#      so these win over the catch-all dashboard router. Must stay open or
+#      tracking on public websites breaks.
+#   2. Dashboard (catch-all): Umami native authentication.
+
+http:
+  routers:
+    # ---- 1. Public collection endpoints -------------------------------------
+    umami-collect-router:
+      rule: Host(`umami.specus.biz`) && (Path(`/script.js`) || Path(`/api/send`))
+      priority: 3000
+      service: umami-service
+      middlewares:
+        - redirect-to-https
+      entryPoints:
+        - web
+    umami-collect-router-websecure:
+      rule: Host(`umami.specus.biz`) && (Path(`/script.js`) || Path(`/api/send`))
+      priority: 3000
+      service: umami-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
+    # ---- 2. Dashboard (Umami native auth) -----------------------------------
+    umami-dashboard-router:
+      rule: Host(`umami.specus.biz`)
+      priority: 1000
+      service: umami-service
+      middlewares:
+        - redirect-to-https
+      entryPoints:
+        - web
+    umami-dashboard-router-websecure:
+      rule: Host(`umami.specus.biz`)
+      priority: 1000
+      service: umami-service
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    umami-service:
+      loadBalancer:
+        servers:
+          - url: http://umami:3000
+        passHostHeader: true

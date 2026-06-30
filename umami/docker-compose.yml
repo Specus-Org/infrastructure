@@ -1,0 +1,45 @@
+# Umami Web Analytics
+# Privacy-focused, self-hosted analytics.
+#
+# Data layout:
+#   Stores analytics in shared PostgreSQL as tenant database 'umami'
+#   (role 'umami_user'). Provision the database first with init-umami.sql.
+#
+# Connectivity:
+#   Reaches PostgreSQL via UMAMI_DB_HOST:
+#     ${UMAMI_DB_HOST:-specus-production-database-rkpsij}:5432
+#
+# Ingress (split routing via Traefik file provider):
+#   - Public, unauthenticated: /script.js (tracker) and /api/send (collection).
+#     These MUST stay public or tracking on public websites breaks.
+#   - Dashboard (everything else): Umami native authentication.
+#   See umami/traefik-config.example.yml
+#
+# Usage:
+#   docker-compose --env-file .env up -d
+
+services:
+  umami:
+    image: ghcr.io/umami-software/umami:${UMAMI_VERSION:-postgresql-latest}
+    container_name: umami
+    hostname: umami
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_TYPE: postgresql
+      DATABASE_URL: postgresql://${UMAMI_DB_USER:-umami_user}:${UMAMI_DB_PASSWORD}@${UMAMI_DB_HOST:-specus-production-database-rkpsij}:${UMAMI_DB_PORT:-5432}/${UMAMI_DB_NAME:-umami}
+      APP_SECRET: ${UMAMI_APP_SECRET}
+    networks:
+      - dokploy-network
+    healthcheck:
+      test:
+        ["CMD-SHELL", "curl -f http://localhost:3000/api/heartbeat || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+networks:
+  dokploy-network:
+    external: true
